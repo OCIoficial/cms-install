@@ -1,6 +1,6 @@
 #! /usr/bin/bash
 
-set -e
+set -ex
 
 # Install dependencies
 sudo apt-get update && sudo apt-get upgrade -y
