@@ -14,11 +14,11 @@ Las instancias corriendo los workers tienen que tener acceso de red a la máquin
 
 ## Configurar red
 
-Para configurar la red necesitamos dos security groups con las siguientes configuraciones.
+Para configurar la red necesitamos dos security groups con las siguientes configuraciones. (*nota* el AWS ya tiene estos security groups creados)
 
 ### oci-main
 
-Este es el security group que se asignará a la maquina principal.
+Este es el security group que se asignará a la maquina principal. Notar que el main host debe poder recibir todo tipo de conexión desde los workers entre los puertos 0 y 65535. Además debe poder recibir conexiones desde fuera de la red (pública) en los puertos 22, 888 y 8889.
 
 | IP Version | Type       | Protocol | Port range | Source         | Description         |
 |------------|------------|----------|------------|----------------|---------------------|
@@ -29,7 +29,7 @@ Este es el security group que se asignará a la maquina principal.
 
 ### oci-worker
 
-Este es el security group que debe ser asignado a los workers
+Este es el security group que debe ser asignado a los workers. Los workers deben poder recibir conexiones desde la máquina principal entre los puertos 0 - 65535.
 
 | IP Version | Type       | Protocol | Port range | Source         | Description         |
 |------------|------------|----------|------------|----------------|---------------------|
@@ -42,6 +42,8 @@ Este es el security group que debe ser asignado a los workers
 Para evitar gastos innecesarios, típicamente levantamos primero la instancia principal `t2.large` para configurar el contest y luego más cerca de la competencia levantamos los dos workers.
 Crear la instancia principal en la consola de AWS con la siguiente configuración
 
+### Máquina principal
+
 * **Name and tags**
   * oci-main
 * **Application and OS Images (Amazon Machine Image)**
@@ -53,21 +55,39 @@ Crear la instancia principal en la consola de AWS con la siguiente configuració
 * **Instance Type**
   * Instance Type: `t2.large`
 * **Network Setting**
-  * Seleccionar "Select existing security group" y luego busca `oci-main` creado en el paso anterior
+  * Seleccionar "Select existing security group" y luego busca `oci-main`
 * **Configure Storage**
   * 1x `16` GB `gp2`.
+
+### Worker
+
+* **Name and tags**
+  * oci-worker-1 o oci-worker-2
+* **Application and OS Images (Amazon Machine Image)**
+  * Amazon Machine Image (AMI): `Ubuntu Server 22.04 LTS (HVM), SSD Volume Type`
+  * Architecture: `64-bit(x86)`
+  * *Nota*: Puedes usar la misma AMI que para la máquina principal
+* **Key pair(login)**
+  * Seleccionar un par de llaves al que tengas acceso, o crea uno nuevo. Históricamente hemos usamos `ociadmin`.
+* **Instance Type**
+  * Instance Type: `t2.small`
+* **Network Setting**
+  * Seleccionar "Select existing security group" y luego busca `oci-worker`
+* **Configure Storage**
+  * 1x `8` GB `gp2`.
  
 ## Instalar CMS
 
-Si no seleccionaste la AMI y estás instalando configurando una máquina desde cero debes instalar CMS y todas sus dependencias.
+Si no seleccionaste la AMI y estás instalando configurando una máquina desde cero debes instalar CMS y todas sus dependencias. CMS debe ser instado en todas las máquinas (la principal y los workers).
 
 ```bash
 $ git clone https://github.com/OCIoficial/cms-install
 $ cd cms-install
 $ ./install-cms.sh
 ```
- 
-## Instalar y Configurar Postgres
+## Configurar máquina principal
+
+### Instalar y Configurar Postgres
 
 Una vez conectado a la maquina principal clonar este repositorio. Luego correr el script `setup-postgres`
 ```bash
@@ -77,7 +97,7 @@ $ ./setup-postgres
 ```
 Esto instalará postgres y lo configurará para que pueda ser accedido desde los workers. Adicionalmente, creará una base de datos para cms. Puedes modificar el script para cambiar el usuario y nombre de la base de datos. Por defecto estos `cmsdb` y `cmsuser`. Durante la creación de la base de datos el script preguntará por una contraseña. Debes recordar esta contraseña para configurar cms.
 
-## Configurar CMS
+### Configurar CMS
 
 * Clonar el repositorio `tools`. Este repositorio contiene algunos scripts para ayudar a configurar CMS.
    ```bash
@@ -98,7 +118,7 @@ Esto instalará postgres y lo configurará para que pueda ser accedido desde los
   $ cmsInitDB
   ```
    
-## Levantar CMS
+### Levantar CMS
 
 * Iniciar el `LogService`. Esto crea una sessión de `screen` y corre el `LogService` en esta. Es necesario tener el log service corriendo antes de levantar otros servicios.
    ```bash
@@ -112,5 +132,5 @@ Esto instalará postgres y lo configurará para que pueda ser accedido desde los
   ```bash
   $ cmsAddAdmin <username> -p <password>
   ```
-* En este momento debieses estar todo lo necesario para crear un 
+* En este momento debiese estar todo lo necesario para crear un contest y subir los problemas
 
