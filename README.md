@@ -14,7 +14,11 @@ Las instancias corriendo los workers tienen que tener acceso de red a la máquin
 
 ## Configurar red
 
+Para configurar la red necesitamos dos security groups con las siguientes configuraciones.
+
 ### oci-main
+
+Este es el security group que se asignará a la maquina principal.
 
 | IP Version | Type       | Protocol | Port range | Source         | Description         |
 |------------|------------|----------|------------|----------------|---------------------|
@@ -24,6 +28,8 @@ Las instancias corriendo los workers tienen que tener acceso de red a la máquin
 | IPv4       | ALL TCP    | TCP      | 0 - 65535  | `<oci-worker>` |                     |
 
 ### oci-worker
+
+Este es el security group que debe ser asignado a los workers
 
 | IP Version | Type       | Protocol | Port range | Source         | Description         |
 |------------|------------|----------|------------|----------------|---------------------|
@@ -37,87 +43,74 @@ Para evitar gastos innecesarios, típicamente levantamos primero la instancia pr
 Crear la instancia principal en la consola de AWS con la siguiente configuración
 
 * **Name and tags**
-  * oci-principal
+  * oci-main
 * **Application and OS Images (Amazon Machine Image)**
   * Amazon Machine Image (AMI): `Ubuntu Server 22.04 LTS (HVM), SSD Volume Type`
   * Architecture: `64-bit(x86)`
+  * *Nota*: hay una AMI guardada con que tiene ya instalado el CMS de la OCI 2022. Puedes seleccionarla en "browse more AMIs"
 * **Key pair(login)**
-  * Seleccionar un par de llaves al que tengas acceso, históricamente hemos usamos `ociadmin`.
+  * Seleccionar un par de llaves al que tengas acceso, o crea uno nuevo. Históricamente hemos usamos `ociadmin`.
 * **Instance Type**
   * Instance Type: `t2.large`
 * **Network Setting**
-  * Seleccionar la opción `Allow SSH traffic from: Anywhere`
+  * Seleccionar "Select existing security group" y luego busca `oci-main` creado en el paso anterior
 * **Configure Storage**
-  * 1x `16` GB `gp2`
-
+  * 1x `16` GB `gp2`.
+ 
 ## Instalar CMS
 
-## Configurar Postgres
+Si no seleccionaste la AMI y estás instalando configurando una máquina desde cero debes instalar CMS y todas sus dependencias.
 
-
-## Correr CMS
-
-* Correr log service en screen
-* Copiar conf.yaml.sample to conf.yaml y modificar
-* Correr cms-tools restart
-
-```yaml
-# We call "local" the the main host that runs the database
-# and all the core services. cms-tools is expected to
-# run in this host.
-local:
-    # This ip should be reachable by all remote hosts.
-    # One should avoid using a public ip here so services
-    # are not exposed unnecesarily outside of the local network.
-    ip: 172.31.94.183
-
-    # Number of workers that will run in the local host.
-    # It is recommended to run workers only on remote hosts.
-    workers: 1
-
-    # Make sure the database can accept connections from all the remote hosts.
-    # You need to make two changes for that:
-    # 1) Edit postgresql.conf to listen in the internal/local address, e.g.,
-    #    if the internal/local address of is 192.168.0.2, one should add the following:
-    #    listen_addreses = '127.0.0.1,192.168.0.2'
-    # 2) Edit pg_hba.conf to accept login requests from the remote hosts, e.g.,
-    #    if all remote host are in the 192.168.0.0/24 subnet one should add a line
-    #    like so:
-    #    host cmsdb cmsuser 196.168.0.0/24 md5
-    db:
-        name: cmsdb
-        username: cmsuser
-        password: Oci2021!
-
-# The list of remote hosts running workers
-remote: []
-# remote:
-#     -
-#       # This ip should be reachable by the local host.
-#       ip: 172.31.15.133
-#
-#       # Number of workers running in the host
-#       workers: 1
-#
-#       # Username used to connect via ssh to the host to
-#       # run commands and copy files. It is recommended that
-#       # every remote has the public key of the local host,
-#       # otherwise you'll need to type the password for every
-#       # host when running commands.
-#       username: ociadmin
-#     -
-#       #This ip should be reachable by the local host.
-#       ip: 172.31.5.213
-#
-#       # Number of workers running in the host
-#       workers: 1
-#
-#       # Username used to connect via ssh to the host to
-#       # run commands and copy files. It is recommended that
-#       # every remote has the public key of the local host,
-#       # otherwise you'll need to type the password for every
-#       # host when running commands.
-#       username: ociadmin
-rankings:
-    - "http://scoreboard:123scoreboard321@localhost:8890/"
+```bash
+$ git clone https://github.com/OCIoficial/cms-install
+$ cd cms-install
+$ ./install-cms.sh
 ```
+ 
+## Instalar y Configurar Postgres
+
+Una vez conectado a la maquina principal clonar este repositorio. Luego correr el script `setup-postgres`
+```bash
+$ git clone https://github.com/OCIoficial/cms-install
+$ cd cms-install
+$ ./setup-postgres
+```
+Esto instalará postgres y lo configurará para que pueda ser accedido desde los workers. Adicionalmente, creará una base de datos para cms. Puedes modificar el script para cambiar el usuario y nombre de la base de datos. Por defecto estos `cmsdb` y `cmsuser`. Durante la creación de la base de datos el script preguntará por una contraseña. Debes recordar esta contraseña para configurar cms.
+
+## Configurar CMS
+
+* Clonar el repositorio `tools`. Este repositorio contiene algunos scripts para ayudar a configurar CMS.
+   ```bash
+   $ git clone https://github.com/OCIoficial/tools
+   $ cd tools/cms-tools
+   ```
+* Copiar `conf.yaml.sample` a `conf.yaml` y modificar con datos de los host. El yaml contiene comentarios. Debes usar las credenciales creadas para la base de datos en el paso anterior. Puedes dejar la cantidad de hosts que actuarán como workers en cero por ahora ya que no son necesarios para subir los problemas y casos de prueba.
+   ```bash
+   $ cp conf.yaml.sample conf.yaml
+   $ vim conf.yaml
+   ```
+* Copiar `cms.conf` a los hosts. Cada vez que hagas modificaciones a `conf.yaml` debes generar y copiar `cms.conf`.
+   ```bash
+   $ ./cms-tools.py copy-cms-conf
+   ```
+* Inicializar base de datos en CMS. Si la configuración de la base de datos en el paso anterior fue exitosa. Este comando debiese ejecutar sin problemas. En caso contrario deberás asegurarte que la base de datos este configurada correctamente.
+  ```bash
+  $ cmsInitDB
+  ```
+   
+## Levantar CMS
+
+* Iniciar el `LogService`. Esto crea una sessión de `screen` y corre el `LogService` en esta. Es necesario tener el log service corriendo antes de levantar otros servicios.
+   ```bash
+   $ ./cms-tools.py restart-log-service
+   ```
+* Iniciar el `ResourceService` en todos los hosts. El resource service se encarga de monitorear todos los servicios de cms. Dada la configuración de `cms.conf` que copiamos a todos los hosts, el resource service se encargará que los hosts corrar los servicios necesarios. Una vez inicial el `ResourceService` debieses ser capaz de ingresar a la consola de administración web en la ip del main host en el puerto 8889.
+  ```bash
+  $ ./cms-tools.py restart-resource-service
+  ```
+* Para ingresar a la consola de administración web debes primero crear una cuenta.
+  ```bash
+  $ cmsAddAdmin <username> -p <password>
+  ```
+* En este momento debieses estar todo lo necesario para crear un 
+
