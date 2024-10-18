@@ -59,7 +59,7 @@ Crear la instancia principal en la consola de AWS con la siguiente configuració
 * **Configure Storage**
   * 1x `16` GB `gp2`.
 
-### Worker
+### Máquina para Worker
 
 * **Name and tags**
   * oci-worker-1 o oci-worker-2
