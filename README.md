@@ -89,6 +89,14 @@ $ cd cms-install
 $ ./install-cms.sh
 ```
 
+### Logo
+
+Copiar el logo de la oci para que aparesca en el ranking web ser
+
+```bash
+sudo cp cms-install/logo.png /usr/local/lib/python3.8/dist-packages/cms-1.5.dev0-py3.8.egg/cmsranking/static/img/logo.png
+```
+
 ## Configurar máquina principal
 
 ### Instalar y configurar Postgres
@@ -143,11 +151,7 @@ $ ./setup-postgres
   ```
 * En este momento debiese estar todo lo necesario para crear un contest y subir los problemas.
 
-## Configurar un subdominio de olimpiada-informatica.cl
-
-### Crear entrada en Cloudflare
-
-Agregar una entrada al DNS apuntando a la IP publica del main host con el subdominio deseado. Preocuparse de dejar desmarcada la opción proxy, es decir, que la entrada sea `DNS only`.
+## Configurar subdominios de olimpiada-informatica.cl
 
 ### Configurar nginx
 
@@ -156,12 +160,16 @@ Agregar una entrada al DNS apuntando a la IP publica del main host con el subdom
   sudo apt-get install nginx
   sudo systemctl enable --now nginx.service
   ```
-* Copiar `cms.nginx` a `sites-enabled` y modificar el archivo con el subdominio creado en el paso anterior. Este archivo contiene la configuración para redirigir el tráfico HTTP al web service de cms. No olvidar reiniciar nginx después de hacer cambios.
+* Copiar `cms.nginx` a `sites-enabled` y modificar el archivo con los subdominios deseados. Este archivo contiene la configuración para redirigir el tráfico HTTP al ContestWebServer, al AdminWebServer y al RankingWebServer. No olvidar reiniciar nginx después de hacer cambios.
   ```bash
   sudo cp cms-install/cms.nginx /etc/nginx/sites-enabled
   sudo vim /etc/nginx/sites-enabled/cms.nginx
   sudo systemctl restart nginx.service
   ```
+
+### Crear entradas en Cloudflare
+
+Agregar entradas al DNS apuntando a la IP publica del main host con los subdominios deseados. Preocuparse de dejar desmarcada la opción proxy, es decir, que la entrada sea `DNS only`.
 
 ### Configurar HTTPS
 
@@ -172,7 +180,7 @@ Puedes usar cerbot para generar un certificado y configurar nginx para redirigir
   sudo snap install --classic certbot
   sudo ln -s /snap/bin/certbot /usr/bin/certbot
   ```
-* Generar certificados y configurar ngix para rederigir el tráfico https. Ejecuta el comando y luego sigue las instrucciones. El script lee los servidores habilitados en nginx y te pregunta cuales quieres configurar.
+* Generar certificados y configurar ngix para rederigir el tráfico https. Ejecuta el comando y luego sigue las instrucciones. El script lee los servidores habilitados en nginx y te pregunta cual dominio quieres configurar.
   ```bash
   sudo certbot --nginx
   ```
