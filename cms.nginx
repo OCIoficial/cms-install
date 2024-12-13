@@ -1,7 +1,24 @@
 server {
-    server_name <subdominio>.olimpiada-informatica.cl;
+    server_name <contest>.olimpiada-informatica.cl;
 
     location / {
         proxy_pass http://127.0.0.1:8888;
+    }
+}
+
+server {
+    server_name <admin>.olimpiada-informatica.cl;
+
+    location / {
+        proxy_pass http://127.0.0.1:8889;
+    }
+}
+
+server {
+    server_name <ranking>.olimpiada-informatica.cl;
+
+    location / {
+        proxy_pass http://127.0.0.1:8890;
+        proxy_buffering off;
     }
 }
