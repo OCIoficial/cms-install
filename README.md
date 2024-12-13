@@ -14,24 +14,25 @@ Las instancias corriendo los workers tienen que tener acceso de red a la máquin
 
 ## Configurar red
 
-Para configurar la red necesitamos dos security groups con las siguientes configuraciones. (*nota* el AWS ya tiene estos security groups creados)
+Para configurar la red necesitamos dos security groups con las siguientes configuraciones. (*nota* el AWS de la OCI ya tiene estos security groups creados)
 
 ### oci-main
 
-Este es el security group que se asignará a la maquina principal. Notar que el main host debe poder recibir todo tipo de conexión desde los workers entre los puertos 0 y 65535. Además debe poder recibir conexiones desde fuera de la red (pública) en los puertos 22, 888 y 8889.
+Este es el security group que se asignará a la maquina principal. Notar que el main host debe poder recibir todo tipo de conexión desde los workers entre los puertos 0 y 65535. Además debe poder recibir conexiones desde fuera de la red (pública) en los puertos 22, 80, 443, 8890, 8888 y 8889.
 
 | IP Version | Type       | Protocol | Port range | Source         | Description         |
 |------------|------------|----------|------------|----------------|---------------------|
 | IPv4       | HTTPS      | TCP      | 443        | 0.0.0.0/0      |                     |
 | IPv4       | HTTP       | TCP      | 80         | 0.0.0.0/0      |                     |
 | IPv4       | SSH        | TCP      | 22         | 0.0.0.0/0      | SSH                 |
+| IPv4       | Custom TCP | TCP      | 8890       | 0.0.0.0/0      | Ranking Web Service |
 | IPv4       | Custom TCP | TCP      | 8888       | 0.0.0.0/0      | Contest Web Service |
 | IPv4       | Custom TCP | TCP      | 8889       | 0.0.0.0/0      | Admin Web Service   |
 | IPv4       | ALL TCP    | TCP      | 0 - 65535  | `<oci-worker>` |                     |
 
 ### oci-worker
 
-Este es el security group que debe ser asignado a los workers. Los workers deben poder recibir conexiones desde la máquina principal entre los puertos 0 - 65535.
+Este es el security group que debe ser asignado a los workers. Los workers deben poder recibir conexiones desde la máquina principal entre los puertos 0 - 65535. Tambien es conveniente poder recibir conexiones ssh al puerto 22 desde el main host.
 
 | IP Version | Type       | Protocol | Port range | Source         | Description         |
 |------------|------------|----------|------------|----------------|---------------------|
@@ -80,13 +81,14 @@ Crear la instancia principal en la consola de AWS con la siguiente configuració
  
 ## Instalar CMS
 
-Si no seleccionaste la AMI y estás instalando configurando una máquina desde cero debes instalar CMS y todas sus dependencias. CMS debe ser instado en todas las máquinas (la principal y los workers).
+Si no seleccionaste la AMI y estás configurando una máquina desde cero debes instalar CMS y todas sus dependencias. CMS debe ser instado en todas las máquinas (la principal y los workers). 
 
 ```bash
 $ git clone https://github.com/OCIoficial/cms-install
 $ cd cms-install
 $ ./install-cms.sh
 ```
+
 ## Configurar máquina principal
 
 ### Instalar y Configurar Postgres
@@ -101,7 +103,7 @@ $ ./setup-postgres
 
 ### Configurar CMS
 
-* Clonar el repositorio `tools` e instala `cms-tools`.
+* Clonar el repositorio `tools` e instala `cms-tools`. El script contiene comandos para configurar y controlar todos los hosts (main y workers) desde el main host.
    ```bash
    git clone https://github.com/OCIoficial/tools
    pip install -e tools/cms-tools
@@ -141,7 +143,7 @@ $ ./setup-postgres
   ```
 * En este momento debiese estar todo lo necesario para crear un contest y subir los problemas
 
-## Configurar un subdominio nginx
+## Configurar un subdominio de olimpiada-informatica.cl
 
 ### Creare entrada en cloudfare
 
@@ -154,7 +156,7 @@ Agregar una entrada al DNS apuntando a la IP publica del main host con el subdom
   sudo apt-get install nginx
   sudo sytemctl enable --now nginx.service
   ```
-* Copiar `cms.nginx` a `site-enabled` y modificar el archivo para tener el subdominio creado en el paso anterior. Este archivo contiene la configuración para redirigir el puerto http al web server de cms. No olvidar reiniciar nginx después de hacer cambios.
+* Copiar `cms.nginx` a `sites-enabled` y modificar el archivo con subdominio creado en el paso anterior. Este archivo contiene la configuración para redirigir el tráfico HTTP al web service de cms. No olvidar reiniciar nginx después de hacer cambios.
   ```bash
   sudo cp cms-install/cms.nginx /etc/nginx/sites-enabled
   sudo vim /etc/nginx/sites-enabled/cms.nginx
