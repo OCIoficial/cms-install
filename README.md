@@ -111,15 +111,17 @@ $ ./setup-postgres
 
 ### Configurar CMS
 
-* Clonar el repositorio `tools` e instalar el paqeute `server-tools` que contiene algunos scripts utils para trabajar en el server. El sccript `cms-tools` contiene algunos comandos para configurar y controlar todos los hosts (main y workers) desde el main host.
+* Preparar python para hacer un virtual env
+   ```bash
+   sudo apt install python3.8-venv
+   python3 -m venv oci
+   source oci/bin/activate
+   python -m pip install --upgrade pip
+   ```
+* Clonar el repositorio `tools` e instalar el paquete `oci-server-tools` que contiene algunos scripts utiles para trabajar en el server. Asegurarse de estar en el virtual env creado en el paso anterior para que no interfiera con los paquetes del sistema de los que CMS depende. El sccript `cms-tools` contiene algunos comandos para configurar y controlar todos los hosts (main y workers) desde el main host.
    ```bash
    git clone https://github.com/OCIoficial/tools
    pip install -e tools/oci-server-tools
-   ```
-   NOTE: La version de `pip` en la AMI es vieja y no soporta `pyproject.toml` así que hay que actualizarlo. También puede que haya que agregar `.local/bin` al `PATH`
-   ```
-   python3 -m pip install --upgrade pip
-   echo "exprt PATH=".local/bin:$PATH" >> .bashrc
    ```
 * Genenar `conf.yaml` con `cms-tools` y modificarlo con los datos de los host. El yaml contiene comentarios. Debes usar las credenciales creadas para la base de datos en el paso anterior. Puedes dejar la cantidad de hosts que actuarán como workers en cero por ahora ya que no son necesarios para subir los problemas.
    ```bash
@@ -155,7 +157,7 @@ $ ./setup-postgres
 
 ### Configurar nginx
 
-* Instalar y habilitar nginx
+* En la máquina principal instalar y habilitar nginx
   ```bash
   sudo apt-get install nginx
   sudo systemctl enable --now nginx.service
