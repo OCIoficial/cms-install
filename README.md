@@ -62,7 +62,7 @@ Crear la instancia principal en la consola de AWS con la siguiente configuració
 * **Configure Storage**
   * 1x `16` GB `gp2`.
 
-### Máquina para Worker
+### Máquina para worker
 
 * **Name and tags**
   * oci-worker-1 o oci-worker-2
@@ -91,7 +91,7 @@ $ ./install-cms.sh
 
 ## Configurar máquina principal
 
-### Instalar y Configurar Postgres
+### Instalar y configurar Postgres
 
 Una vez conectado a la maquina principal clonar este repositorio. Luego correr el script `setup-postgres`. Esto instalará postgres y lo configurará para que pueda ser accedido desde los workers. Adicionalmente, creará una base de datos para cms. Puedes modificar el script para cambiar el usuario y nombre de la base de datos. Por defecto estos son `cmsdb` y `cmsuser`. Durante la creación de la base de datos el script preguntará por una contraseña. Debes recordar esta contraseña para configurar cms.
 
@@ -103,10 +103,10 @@ $ ./setup-postgres
 
 ### Configurar CMS
 
-* Clonar el repositorio `tools` e instala `cms-tools`. El script contiene comandos para configurar y controlar todos los hosts (main y workers) desde el main host.
+* Clonar el repositorio `tools` e instalar el paqeute `server-tools` que contiene algunos scripts utils para trabajar en el server. El sccript `cms-tools` contiene algunos comandos para configurar y controlar todos los hosts (main y workers) desde el main host.
    ```bash
    git clone https://github.com/OCIoficial/tools
-   pip install -e tools/cms-tools
+   pip install -e tools/oci-server-tools
    ```
    NOTE: La version de `pip` en la AMI es vieja y no soporta `pyproject.toml` así que hay que actualizarlo. También puede que haya que agregar `.local/bin` al `PATH`
    ```
@@ -122,7 +122,7 @@ $ ./setup-postgres
    ```bash
    cms-tools copy-cms-conf
    ```
-* Inicializar base de datos en CMS. Si la configuración de la base de datos en el paso anterior fue exitosa. Este comando debiese ejecutar sin problemas. En caso contrario deberás asegurarte que la base de datos este configurada correctamente.
+* Inicializar base de datos en CMS. Si la configuración de la base de datos en el paso anterior fue exitosa este comando debiese ejecutarse sin problemas. En caso contrario deberás asegurarte que la base de datos este configurada correctamente.
   ```bash
   cmsInitDB
   ```
@@ -133,7 +133,7 @@ $ ./setup-postgres
    ```bash
    cms-tools restart-log-service
    ```
-* Iniciar el `ResourceService` en todos los hosts. El resource service se encarga de monitorear todos los servicios de cms. Dada la configuración de `cms.conf` que copiamos a todos los hosts, el resource service se encargará que los hosts corrar los servicios necesarios. Una vez iniciado el `ResourceService` debieses ser capaz de ingresar a la consola de administración web en la ip del main host en el puerto 8889.
+* Iniciar el `ResourceService` en todos los hosts. El resource service se encarga de monitorear todos los servicios de cms. Dada la configuración de `cms.conf` que copiamos a todos los hosts, el resource service se encargará que los hosts corran los servicios necesarios. Una vez iniciado el `ResourceService` debieses ser capaz de ingresar a la consola de administración web en la ip del main host en el puerto 8889.
   ```bash
   cms-tools restart-resource-service
   ```
@@ -141,11 +141,11 @@ $ ./setup-postgres
   ```bash
   cmsAddAdmin <username> -p <password>
   ```
-* En este momento debiese estar todo lo necesario para crear un contest y subir los problemas
+* En este momento debiese estar todo lo necesario para crear un contest y subir los problemas.
 
 ## Configurar un subdominio de olimpiada-informatica.cl
 
-### Creare entrada en cloudfare
+### Crear entrada en Cloudflare
 
 Agregar una entrada al DNS apuntando a la IP publica del main host con el subdominio deseado. Preocuparse de dejar desmarcada la opción proxy, es decir, que la entrada sea `DNS only`.
 
@@ -154,9 +154,9 @@ Agregar una entrada al DNS apuntando a la IP publica del main host con el subdom
 * Instalar y habilitar nginx
   ```bash
   sudo apt-get install nginx
-  sudo sytemctl enable --now nginx.service
+  sudo systemctl enable --now nginx.service
   ```
-* Copiar `cms.nginx` a `sites-enabled` y modificar el archivo con subdominio creado en el paso anterior. Este archivo contiene la configuración para redirigir el tráfico HTTP al web service de cms. No olvidar reiniciar nginx después de hacer cambios.
+* Copiar `cms.nginx` a `sites-enabled` y modificar el archivo con el subdominio creado en el paso anterior. Este archivo contiene la configuración para redirigir el tráfico HTTP al web service de cms. No olvidar reiniciar nginx después de hacer cambios.
   ```bash
   sudo cp cms-install/cms.nginx /etc/nginx/sites-enabled
   sudo vim /etc/nginx/sites-enabled/cms.nginx
