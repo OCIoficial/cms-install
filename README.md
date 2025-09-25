@@ -18,7 +18,7 @@ Para configurar la red necesitamos dos security groups con las siguientes config
 
 ### cms-main
 
-Este es el security group que se asignará a la maquina principal. Notar que el main host debe poder recibir todo tipo de conexión desde los workers entre los puertos 0 y 65535. Además, debe poder recibir conexiones desde fuera de la red (pública) en los puertos 22, 80, 443, 8890, 8888 y 8889.
+Este es el security group que se asignará a la máquina principal. Notar que el main host debe poder recibir todo tipo de conexión desde los workers entre los puertos 0 y 65535. Además, debe poder recibir conexiones desde fuera de la red (pública) en los puertos 22, 80, 443, 8890, 8888 y 8889.
 
 | IP Version | Type       | Protocol | Port range | Source         | Description         |
 |------------|------------|----------|------------|----------------|---------------------|
@@ -90,14 +90,6 @@ $ sudo usermod -a -G isolate ubuntu  # reiniciar sesion para actualizar grupos
 $ sudo ./install-cms.sh
 ```
 
-### Logo
-
-Copiar el logo de la oci para que aparesca en el ranking web ser
-
-```bash
-cp cms-install/logo.png $HOME/cms/lib/python3.12/site-packages/cmsranking/static/img/logo.png
-```
-
 ## Configurar máquina principal
 
 ### Instalar y configurar Postgres
@@ -141,15 +133,25 @@ $ ./setup-postgres
    ```bash
    cms-tools restart-log-service
    ```
-* Iniciar el `ResourceService` en todos los hosts. El resource service se encarga de monitorear todos los servicios de cms. Dada la configuración de `cms.toml` que copiamos a todos los hosts, el resource service se encargará que los hosts corran los servicios necesarios. Una vez iniciado el `ResourceService` debieses ser capaz de ingresar a la consola de administración web en la ip del main host en el puerto 8889.
+* Iniciar el `ResourceService` en todos los hosts. El resource service se encarga de monitorear todos los servicios de cms. Dada la configuración de `cms.toml` que copiamos a todos los hosts, el resource service se encargará de que los hosts corran los servicios necesarios. Una vez iniciado el `ResourceService` debieses ser capaz de ingresar a la consola de administración web en la ip del main host en el puerto 8889.
   ```bash
   cms-tools restart-resource-service
   ```
-* Para ingresar a la consola de administración web debes primero crear una cuenta.
+* Para ingresar a la consola de administración web, debes primero crear una cuenta.
   ```bash
   cmsAddAdmin <username> -p <password>
   ```
 * En este momento debiese estar todo lo necesario para crear un contest y subir los problemas.
+
+### Ranking
+* Puedes copiar las imágenes con el logo de la OCI y las banderas de las regiones usando cms-tools
+  ```bash
+  cms-tools copy-ranking-images
+  ```
+* Para iniciar el ranking debes estar seguro de que el `ProxyService` esté corriendo. El `ProxyService` solo se levanta por el `ResourceService` cuando está corriendo para solo un contest. Una vez este corriendo el `ProxyService` puedes levantar el ranking con:
+  ```bash
+  cms-tools restart-ranking
+  ```
 
 ## Configurar subdominios de olimpiada-informatica.cl
 
@@ -169,7 +171,7 @@ $ ./setup-postgres
 
 ### Crear entradas en Cloudflare
 
-Agregar entradas al DNS apuntando a la IP publica del main host con los subdominios deseados. Preocuparse de dejar desmarcada la opción proxy, es decir, que la entrada sea `DNS only`.
+Agregar entradas tipo `A` al DNS apuntando a la IP pública del main host con los subdominios deseados. Preocuparse de dejar desmarcada la opción proxy, es decir, que la entrada sea `DNS only`.
 
 ### Configurar HTTPS
 
@@ -180,7 +182,7 @@ Puedes usar cerbot para generar un certificado y configurar nginx para redirigir
   sudo snap install --classic certbot
   sudo ln -s /snap/bin/certbot /usr/bin/certbot
   ```
-* Generar certificados y configurar ngix para rederigir el tráfico https. Ejecuta el comando y luego sigue las instrucciones. El script lee los servidores habilitados en nginx y te pregunta cual dominio quieres configurar.
+* Generar certificados y configurar ngix para redirigir el tráfico https. Ejecuta el comando y luego sigue las instrucciones. El script lee los servidores habilitados en nginx y te pregunta cuál dominio quieres configurar.
   ```bash
   sudo certbot --nginx
   ```
