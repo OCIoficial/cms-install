@@ -1,0 +1,22 @@
+#! /usr/bin/bash
+# Baja desde S3 la última versión de los scripts de despliegue (scripts/ del
+# repo) e instala los comandos y servicios systemd. No reinicia CMS.
+#
+# Corre solo: en cada arranque, antes de cada comando que Terraform ejecuta en
+# la principal, y en los workers cuando cms-contest los reinicia. Así un
+# `terraform apply` con scripts cambiados llega a las máquinas que ya existen.
+
+set -euo pipefail
+. /opt/cms-deploy/lib.sh
+require_root "$@"
+
+# Una ejecución a la vez: Terraform puede ejecutar dos comandos al mismo tiempo
+exec 9>/run/cms-update-scripts.lock
+flock 9
+
+"$AWS" --region "$AWS_REGION" s3 sync --delete --only-show-errors "s3://$ASSETS_BUCKET/scripts" "$DEPLOY_DIR"
+chmod -R a+rx "$DEPLOY_DIR"
+
+install -m 755 "$DEPLOY_DIR"/bin/* /usr/local/bin/
+install -m 644 "$DEPLOY_DIR"/systemd/*.service /etc/systemd/system/
+systemctl daemon-reload

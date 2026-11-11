@@ -2,8 +2,9 @@
 # Uso: run-on-main.sh <instance_id> <region> <comando...>
 #
 # Lo llama Terraform (terraform_data en commands.tf). Ejecuta un comando como
-# root en la principal vía SSM, después de que termine su primer arranque, y
-# espera el resultado. Requiere la AWS CLI y las credenciales de Terraform.
+# root en la principal vía SSM, después de que termine su primer arranque y de
+# actualizar los scripts desde S3, y espera el resultado. Requiere la AWS CLI y
+# las credenciales de Terraform.
 
 set -euo pipefail
 
@@ -14,7 +15,7 @@ shift 2
 ssm() { aws --region "$REGION" ssm "$@"; }
 
 # Primero esperar el primer arranque (1 = error; 2 = terminó con advertencias)
-PARAMS="{\"commands\":[\"cloud-init status --wait >/dev/null || test \$? -eq 2 || { echo El primer arranque falló, ver /var/log/cloud-init-output.log; exit 1; }\",\"$*\"],\"executionTimeout\":[\"3600\"]}"
+PARAMS="{\"commands\":[\"cloud-init status --wait >/dev/null || test \$? -eq 2 || { echo El primer arranque falló, ver /var/log/cloud-init-output.log; exit 1; }\",\"/usr/local/bin/cms-update-scripts || exit 1\",\"$*\"],\"executionTimeout\":[\"3600\"]}"
 
 # El agente de SSM tarda en registrarse después de que arranca la máquina
 for _ in $(seq 60); do

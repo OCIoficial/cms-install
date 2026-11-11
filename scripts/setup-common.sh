@@ -12,9 +12,7 @@ usermod -a -G isolate ubuntu
 as_ubuntu env CMS_REF="$CMS_REF" "$DEPLOY_DIR/install-cms.sh"
 
 # Comandos de operación y servicios systemd
-install -m 755 "$DEPLOY_DIR"/bin/* /usr/local/bin/
-install -m 644 "$DEPLOY_DIR"/systemd/*.service /etc/systemd/system/
+"$DEPLOY_DIR/bin/cms-update-scripts"
 [[ -f /etc/cms/contest ]] || echo "CONTEST=ALL" > /etc/cms/contest
-systemctl daemon-reload
 
 /usr/local/bin/cms-sync-config

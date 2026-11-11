@@ -17,6 +17,10 @@ resource "aws_s3_bucket_public_access_block" "assets" {
 locals {
   scripts_dir = "${path.module}/../scripts"
   ranking_dir = "${path.module}/../ranking"
+  # Cambia si cambia cualquier archivo de scripts/ (ver cms_contest en commands.tf)
+  scripts_hash = sha256(join(",", [
+    for f in sort(fileset(local.scripts_dir, "**")) : "${f}=${filemd5("${local.scripts_dir}/${f}")}"
+  ]))
 }
 
 resource "aws_s3_object" "scripts" {

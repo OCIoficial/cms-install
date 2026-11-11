@@ -119,6 +119,7 @@ Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
 | Comando | Qué hace |
 |---|---|
 | `sudo cms-contest <id\|ALL>` | Baja la configuración, asocia CMS al concurso y reinicia CMS en todas las máquinas. Terraform lo ejecuta solo al cambiar `contest_id` o la configuración. |
+| `sudo cms-update-scripts` | Baja `scripts/` desde S3 e instala comandos y servicios. Corre solo al arrancar, antes de cada comando de Terraform y en los workers con `cms-contest`. |
 | `sudo cms-ranking-reset` | Borra los datos del ranking y los vuelve a cargar desde CMS. |
 | `sudo cms-https` | Obtiene o cambia el certificado HTTPS. Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios o `letsencrypt_staging`. |
 | `cms-backup` | Exporta los concursos a `~/cms-backups/`. Bajarlos con `scp` antes de `terraform destroy`. |
@@ -126,7 +127,7 @@ Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
 
 ## Prueba local
 
-`test/run.sh` prueba el despliegue sin AWS, en VMs de Incus con las mismas IPs y el mismo `user_data` que en EC2. Terraform real genera la configuración contra [moto](https://github.com/getmoto/moto), que simula S3. Prueba la principal, un worker y el cambio de modo preparación a competencia. No prueba IAM, security groups ni HTTPS. Requiere `incus`, `terraform`, `aws` y `uv`. `test/run.sh clean` borra todo.
+`test/run.sh` prueba el despliegue sin AWS, en VMs de Incus con las mismas IPs y el mismo `user_data` que en EC2. Terraform real genera la configuración contra [moto](https://github.com/getmoto/moto), que simula S3. Prueba la principal y un worker en los cambios de un despliegue real: worker creado apagado con la instalación a medias, cambio de `scripts/`, preparación ↔ competencia, un `contest_id` específico y un `apply` sin cambios. Encender y apagar el worker y los comandos que Terraform ejecuta por SSM se imitan con incus. No prueba IAM, security groups, SSM ni HTTPS. Requiere `incus`, `terraform`, `aws` y `uv`. `test/run.sh clean` borra todo.
 
 ## Versión de CMS
 
@@ -138,4 +139,4 @@ Se instala la rama `main` de CMS (1.6.dev0), fijada a un commit en `cms_ref` de 
 - Mientras se hacen pruebas de `destroy`/`apply`, usar `letsencrypt_staging = true`. Let's Encrypt emite como máximo 5 certificados por semana para los mismos dominios.
 - El estado de Terraform queda en `terraform/terraform.tfstate`, solo en el computador de quien hizo el `apply`. No se versiona porque contiene las contraseñas. Si se pierde, Terraform ya no puede modificar ni borrar lo que creó; respaldarlo y pasárselo a quien vaya a administrar el despliegue.
 - Respaldar CMS (`cms-backup` + `scp`) al terminar cada competencia y antes de cambiar `cms_ref` o hacer `destroy`.
-- Cambios en `scripts/` solo afectan a máquinas nuevas, salvo los comandos de `scripts/bin/`, que se pueden copiar a mano.
+- Cambios en `scripts/` llegan a las máquinas existentes con `terraform apply` (`cms-update-scripts`), y CMS se reinicia. Los scripts de instalación (`setup-*.sh`, `install-*.sh`) solo corren en máquinas nuevas.

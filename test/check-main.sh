@@ -4,6 +4,7 @@
 
 set -uo pipefail
 MODE=$1
+CONTEST=$(sed -n 's/^CONTEST=//p' /etc/cms/contest)
 
 http_ok() { # http_ok <host> -> 2xx/3xx a través de nginx
   local code
@@ -11,15 +12,17 @@ http_ok() { # http_ok <host> -> 2xx/3xx a través de nginx
   [[ $code =~ ^[23] ]]
 }
 
-echo "== Principal (modo $MODE)"
+echo "== Principal (modo $MODE, concurso $CONTEST)"
 echo "-- Servicios systemd"
 for unit in postgresql cms-log cms-resource cms-ranking nginx; do
   check "$unit activo" systemctl is-active --quiet "$unit"
 done
 
 echo "-- Servicios de CMS levantados por el ResourceService"
+check "ResourceService con -a $CONTEST" pgrep -f "[c]msResourceService -a $CONTEST\$"
 services=(ScoringService Checker EvaluationService ContestWebServer AdminWebServer)
 [[ $MODE == prep ]] && services+=(Worker)
+[[ $CONTEST != ALL ]] && services+=(ProxyService)
 for svc in "${services[@]}"; do
   check "cms$svc" wait_for 90 pgrep -f "cms$svc"
 done
@@ -39,7 +42,7 @@ check "isolate ejecuta un programa" sudo -u ubuntu bash -c \
   'isolate --cg -b 99 --cleanup; isolate --cg -b 99 --init && isolate --cg -b 99 --run -- /bin/true; r=$?; isolate --cg -b 99 --cleanup; exit $r'
 
 echo "-- Comandos de operación"
-check "cms-contest ALL" cms-contest ALL
+check "cms-contest $CONTEST" cms-contest "$CONTEST"
 check "cms-resource activo después de cms-contest" wait_for 30 systemctl is-active --quiet cms-resource
 check "cms-ranking-reset" cms-ranking-reset
 check "logo restaurado después del reset" test -f /home/ubuntu/cms/lib/ranking/logo.png
