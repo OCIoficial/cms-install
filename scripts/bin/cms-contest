@@ -1,0 +1,45 @@
+#! /usr/bin/bash
+# Uso (en la principal): cms-contest <contest_id|ALL>
+#
+# Asocia CMS a un concurso (necesario para que corra el ProxyService y se
+# actualice el ranking) o vuelve a modo ALL. Además baja la configuración más
+# reciente de S3 y reinicia CMS en la principal y en los workers encendidos.
+
+set -euo pipefail
+. /opt/cms-deploy/lib.sh
+
+if [[ $# -ne 1 ]]; then
+  echo "Uso: cms-contest <contest_id|ALL>" >&2
+  exit 1
+fi
+if [[ $ROLE != main ]]; then
+  echo "cms-contest se corre en la máquina principal" >&2
+  exit 1
+fi
+require_root "$@"
+
+# Validar antes de tocar nada: con un id inexistente CMS no arranca
+if [[ $1 != ALL ]]; then
+  if [[ ! $1 =~ ^[0-9]+$ ]] \
+    || [[ -z $(sudo -u postgres psql -d cmsdb -tAc "SELECT 1 FROM contests WHERE id = $1") ]]; then
+    echo "Error: no existe el concurso $1. CMS sigue como estaba." >&2
+    exit 1
+  fi
+fi
+
+echo "CONTEST=$1" > /etc/cms/contest
+/usr/local/bin/cms-sync-config
+systemctl restart cms-resource.service
+echo "principal: CMS reiniciado con contest=$1"
+
+# shellcheck disable=SC1091
+. "$CMS_HOME/etc/cluster.env"
+i=1
+for _ in $WORKER_IPS; do
+  if as_ubuntu ssh -o ConnectTimeout=5 "worker-$i" sudo systemctl restart cms-resource.service; then
+    echo "worker-$i: CMS reiniciado"
+  else
+    echo "worker-$i: no responde (¿está apagado?)"
+  fi
+  i=$((i + 1))
+done

@@ -1,0 +1,24 @@
+#cloud-config
+# Solo para test/run.sh: la AWS CLI real de la VM usa moto (S3 local) en vez de AWS.
+# Paquete que trae la AMI de Ubuntu en EC2 y la imagen de Incus podría no traer
+packages: [openssh-server]
+write_files:
+  - path: /root/.aws/config
+    content: &config |
+      [default]
+      endpoint_url = http://10.20.0.1:5000
+      s3 =
+        addressing_style = path
+  - path: /root/.aws/credentials
+    content: &credentials |
+      [default]
+      aws_access_key_id = test
+      aws_secret_access_key = test
+  - path: /home/ubuntu/.aws/config
+    content: *config
+    owner: ubuntu:ubuntu
+    defer: true
+  - path: /home/ubuntu/.aws/credentials
+    content: *credentials
+    owner: ubuntu:ubuntu
+    defer: true

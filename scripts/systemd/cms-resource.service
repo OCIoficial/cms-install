@@ -1,0 +1,18 @@
+[Unit]
+Description=CMS ResourceService (levanta los servicios de CMS de esta máquina)
+After=network-online.target postgresql.service cms-log.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/cms
+# CONTEST=ALL o el id del concurso. Se cambia con `cms-contest <id>`.
+EnvironmentFile=/etc/cms/contest
+ExecStartPre=/usr/local/bin/cms-sync-config
+ExecStart=/home/ubuntu/cms/bin/cmsResourceService -a ${CONTEST}
+# En los workers falla hasta que la base de datos de la principal esté disponible
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

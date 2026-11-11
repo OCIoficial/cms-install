@@ -1,0 +1,15 @@
+[Unit]
+Description=CMS LogService
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/cms
+ExecStartPre=/usr/local/bin/cms-sync-config
+ExecStart=/home/ubuntu/cms/bin/cmsLogService
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

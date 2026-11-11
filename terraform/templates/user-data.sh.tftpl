@@ -1,0 +1,60 @@
+#!/bin/bash
+# Primer arranque (cloud-init). Log: /var/log/cloud-init-output.log
+set -euxo pipefail
+
+mkdir -p /etc/cms
+cat > /etc/cms/deploy.env <<'EOF'
+ROLE=${role}
+AWS_REGION=${region}
+ASSETS_BUCKET=${assets_bucket}
+CMS_REF=${cms_ref}
+MAIN_IP=${main_ip}
+VPC_CIDR=${vpc_cidr}
+WORKER_SSH_PUBKEY="${worker_ssh_pubkey}"
+EOF
+
+# Llave pública de la AWS CLI (terraform/aws-cli.asc), para verificar el instalador
+cat > /etc/cms/aws-cli.asc <<'KEY_EOF'
+${aws_cli_key}
+KEY_EOF
+
+# La instalación queda en per-boot/, que cloud-init ejecuta en cada arranque: si
+# la máquina se apaga a medias (p. ej. un worker creado con workers_running =
+# false), sigue en el próximo arranque. Al terminar deja una marca y no se repite.
+SETUP=/var/lib/cloud/scripts/per-boot/cms-setup.sh
+mkdir -p "$(dirname "$SETUP")"
+cat > "$SETUP" <<'SETUP_EOF'
+#!/bin/bash
+set -euxo pipefail
+DONE=/var/lib/cms-deploy/setup-done
+if [[ -f $DONE ]]; then exit 0; fi
+. /etc/cms/deploy.env
+
+# AWS CLI v2 con el instalador oficial de AWS (sin snap), verificando su firma
+if [[ ! -x /usr/local/bin/aws ]]; then
+  dpkg --configure -a
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip gnupg
+  TMP=$(mktemp -d)
+  URL=https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+  curl -fsSL --retry 10 --retry-all-errors -o "$TMP/awscliv2.zip" "$URL"
+  curl -fsSL --retry 10 --retry-all-errors -o "$TMP/awscliv2.sig" "$URL.sig"
+  mkdir -m 700 "$TMP/gnupg"
+  gpg --batch --homedir "$TMP/gnupg" --import /etc/cms/aws-cli.asc
+  # Firma válida de la llave de AWS (huella completa; se acepta aunque la llave haya vencido)
+  gpg --batch --homedir "$TMP/gnupg" --status-fd 1 --verify "$TMP/awscliv2.sig" "$TMP/awscliv2.zip" \
+    | grep -q '^\[GNUPG:\] VALIDSIG FB5DB77FD5C118B80511ADA8A6310ACC4672475C '
+  unzip -q "$TMP/awscliv2.zip" -d "$TMP"
+  "$TMP/aws/install"
+  rm -rf "$TMP"
+fi
+/usr/local/bin/aws --region "$AWS_REGION" s3 sync --only-show-errors "s3://$ASSETS_BUCKET/scripts" /opt/cms-deploy
+chmod -R a+rx /opt/cms-deploy
+
+"/opt/cms-deploy/setup-$ROLE.sh"
+mkdir -p "$(dirname "$DONE")"
+touch "$DONE"
+SETUP_EOF
+chmod 755 "$SETUP"
+
+"$SETUP"

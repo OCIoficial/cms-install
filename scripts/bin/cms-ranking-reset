@@ -1,0 +1,19 @@
+#! /usr/bin/bash
+# Uso (en la principal): cms-ranking-reset
+#
+# Borra todos los datos del ranking (por ejemplo, de pruebas anteriores), vuelve
+# a copiar el logo y las banderas, y reinicia CMS para que el ProxyService
+# reenvíe los datos del concurso actual.
+
+set -euo pipefail
+. /opt/cms-deploy/lib.sh
+require_root "$@"
+
+systemctl stop cms-ranking.service
+# --drop borra todo lib/ranking, incluidas las imágenes
+as_ubuntu "$CMS_BIN/cmsRankingWebServer" --drop --yes
+as_ubuntu "$AWS" --region "$AWS_REGION" s3 sync --only-show-errors \
+  "s3://$ASSETS_BUCKET/ranking" "$CMS_HOME/lib/ranking"
+systemctl start cms-ranking.service
+systemctl restart cms-resource.service
+echo "Ranking reiniciado"

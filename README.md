@@ -1,190 +1,141 @@
+# CMS en AWS
 
-# Instalación de CMS en AWS
+Despliegue de [CMS](https://github.com/cms-dev/cms) para la OCI en AWS con Terraform. Un solo `terraform apply` crea la red, las máquinas, el DNS en Cloudflare y el certificado HTTPS. Al primer arranque, las máquinas instalan y configuran CMS sin pasos manuales.
 
-Este repositorio contiene scripts e instrucciones para instalar [cms](https://github.com/cms-dev/cms) en AWS.
+## Paso a paso
 
-## Introducción
+### Primera vez
 
-En la configuración típica de la OCI usamos tres instancias de EC2
+1. Instalar [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.10 y AWS CLI v2 (en Arch: `pacman -S terraform aws-cli-v2`).
+2. Configurar las [credenciales](#credenciales) y cargarlas: `source .env`.
+3. Completar en `terraform/terraform.tfvars`:
+   - `cloudflare_zone_id`: está en la página **Overview** de la zona en Cloudflare, columna derecha.
+   - `letsencrypt_email`: correo para los avisos de vencimiento de Let's Encrypt.
+   - `ssh_public_key_path`: solo si tu llave pública SSH no es `~/.ssh/id_ed25519.pub`.
+4. Crear todo:
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply
+   ```
+   El `apply` espera a que termine la instalación en la principal (unos 15 minutos) y falla si la instalación falló.
+5. Entrar al [panel de administración](#panel-de-administración).
+6. Apagar los workers mientras se prepara el concurso: en `terraform.tfvars` poner `workers_running = false` y hacer `terraform apply`.
 
-* Una instancia `t2.large` es designada como la máquina principal y corre la base de datos y la mayoría de los servicios de CMS.
-* Dos instancias `t2.small` corren cada una solo un worker.
+Desde aquí se preparan los concursos en el panel de administración. Los envíos se evalúan con un worker que corre en la máquina principal.
 
-Las instancias corriendo los workers tienen que tener acceso de red a la máquina principal para poder acceder a la base de datos y a los servicios de cms.
+### Antes de la competencia (≈1 hora antes)
 
-## Configurar red
+1. En `terraform.tfvars`:
+   - `workers_running = true`
+   - `contest_id = "<número>"`: el id del concurso en el panel de administración. Activa el ranking.
+   - `letsencrypt_staging = false`, si aún estaba en `true`.
+2. `terraform apply`. Enciende los workers, reinicia CMS con la configuración nueva (los envíos los evalúan los workers) y, si cambió `letsencrypt_staging`, obtiene el certificado real.
+3. Si el ranking tiene datos de pruebas: `ssh ubuntu@<ip> sudo cms-ranking-reset`.
+4. Hacer un envío de prueba y revisar en el panel de administración que lo evaluó un worker remoto.
 
-Para configurar la red necesitamos dos security groups con las siguientes configuraciones. (*nota* el AWS de la OCI ya tiene estos security groups creados)
+Después de la competencia: `workers_running = false` y `terraform apply`.
 
-### cms-main
+Al terminar la temporada: respaldar (`cms-backup` en la principal y `scp ubuntu@<ip>:cms-backups/*.tar.gz .`) y luego `terraform destroy`.
 
-Este es el security group que se asignará a la máquina principal. Notar que el main host debe poder recibir todo tipo de conexión desde los workers entre los puertos 0 y 65535. Además, debe poder recibir conexiones desde fuera de la red (pública) en los puertos 22, 80, 443, 8890, 8888 y 8889.
+> Cuando cambia `contest_id` o la configuración de CMS (por ejemplo `workers_running`), `terraform apply` reinicia CMS en todas las máquinas. Evitar hacerlo durante una competencia.
 
-| IP Version | Type       | Protocol | Port range | Source         | Description         |
-|------------|------------|----------|------------|----------------|---------------------|
-| IPv4       | HTTPS      | TCP      | 443        | 0.0.0.0/0      |                     |
-| IPv4       | HTTP       | TCP      | 80         | 0.0.0.0/0      |                     |
-| IPv4       | SSH        | TCP      | 22         | 0.0.0.0/0      |                     |
-| IPv4       | Custom TCP | TCP      | 8890       | 0.0.0.0/0      | Ranking Web Service |
-| IPv4       | Custom TCP | TCP      | 8888       | 0.0.0.0/0      | Contest Web Service |
-| IPv4       | Custom TCP | TCP      | 8889       | 0.0.0.0/0      | Admin Web Service   |
-| IPv4       | ALL TCP    | TCP      | 0 - 65535  | `<oci-worker>` |                     |
+## Panel de administración
 
-### oci-worker
-
-Este es el security group que debe ser asignado a los workers. Los workers deben poder recibir conexiones desde la máquina principal entre los puertos 0 - 65535. También es conveniente poder recibir conexiones ssh al puerto 22 desde el main host.
-
-| IP Version | Type       | Protocol | Port range | Source         | Description         |
-|------------|------------|----------|------------|----------------|---------------------|
-| IPv4       | SSH        | TCP      | 22         | `<oci-main>`   |                     |
-| IPv4       | ALL TCP    | TCP      | 0 - 65535  | `<oci-main>`   |                     |
-
-
-## Crear instancias EC2 en AWS
-
-Para evitar gastos innecesarios, típicamente levantamos primero la instancia principal `t2.large` para configurar el contest y luego más cerca de la competencia levantamos los dos workers.
-Crear la instancia principal en la consola de AWS con la siguiente configuración
-
-### Máquina principal
-
-* **Name and tags**
-  * cms-main
-* **Application and OS Images (Amazon Machine Image)**
-  * Amazon Machine Image (AMI): `Ubuntu Server 24.04 LTS (HVM), SSD Volume Type`
-  * Architecture: `64-bit(x86)`
-* **Instance Type**
-  * Instance Type: `t2.large`
-* **Key pair(login)**
-  * Seleccionar un par de llaves a las que tengas acceso, o crear uno nuevo. Históricamente hemos usado `ociadmin`.
-* **Network Setting**
-  * Seleccionar "Select existing security group" y luego busca `cms-main`
-* **Configure Storage**
-  * 1x `16` GB `gp3`.
-
-### Máquina para worker
-
-* **Name and tags**
-  * cms-worker-1 o cms-worker-2
-* **Application and OS Images (Amazon Machine Image)**
-  * Amazon Machine Image (AMI): `Ubuntu Server 24.04 LTS (HVM), SSD Volume Type`
-  * Architecture: `64-bit(x86)`
-  * *Nota*: Puedes usar la misma AMI que para la máquina principal
-* **Instance Type**
-  * Instance Type: `t2.small`
-* **Key pair(login)**
-  * Seleccionar un par de llaves a las que tengas acceso, o crear uno nuevo. Históricamente hemos usado `ociadmin`.
-* **Network Setting**
-  * Seleccionar "Select existing security group" y luego busca `cms-worker`
-* **Configure Storage**
-  * 1x `8` GB `gp3`.
- 
-## Instalar CMS
-
-Si no seleccionaste la AMI y estás configurando una máquina desde cero, debes instalar CMS y todas sus dependencias. CMS debe ser instalado en todas las máquinas (la principal y los workers). 
+En el primer arranque se crea el usuario `admin` con una contraseña generada al azar por Terraform. Desde `terraform/`:
 
 ```bash
-$ git clone https://github.com/OCIoficial/cms-install
-$ cd cms-install
-$ sudo ./install-dependencies.sh
-$ sudo usermod -a -G isolate ubuntu  # reiniciar sesion para actualizar grupos
-$ sudo ./install-cms.sh
+terraform output urls                  # URL del panel (admin)
+terraform output -raw admin_password   # contraseña del usuario admin
 ```
 
-## Configurar máquina principal
+Para agregar más administradores (mejor uno por persona): desde la sección **Admins** del panel, o en la principal con `~/cms/bin/cmsAddAdmin <usuario> -p <contraseña>`.
 
-### Instalar y configurar Postgres
+## Credenciales
 
-Una vez conectado a la máquina principal, clonar este repositorio. Luego, correr el script `setup-postgres`. Esto instalará PostgreSQL y lo configurará para que pueda ser accedido desde los workers. Adicionalmente, creará una base de datos para cms. Puedes modificar el script para cambiar el usuario y el nombre de la base de datos. Por defecto, estos son `cmsdb` y `cmsuser`. Durante la creación de la base de datos, el script preguntará por una contraseña. Debes recordar esta contraseña para configurar cms.
+Terraform y `aws` leen las credenciales desde variables de entorno. Guárdalas en un archivo `.env` en la raíz del repo (está en `.gitignore`, no se versiona):
 
 ```bash
-$ git clone https://github.com/OCIoficial/cms-install
-$ cd cms-install
-$ ./setup-postgres
+export AWS_PROFILE=oci-admin
+export CLOUDFLARE_API_TOKEN=...            # token "terraform"
+export TF_VAR_cloudflare_certbot_token=... # token "certbot"
 ```
 
-### Configurar CMS
+### AWS
 
-* Installar `uv`
+No usar el usuario root. Se usa un usuario de IAM Identity Center (gratis) con credenciales temporales:
+
+1. Como root, en la consola: **IAM Identity Center → Enable** (región US East (Ohio), con AWS Organizations).
+2. **Users → Add user** con tu correo. Acepta la invitación que llega por correo y define contraseña y MFA.
+3. **Permission sets → Create → Predefined → AdministratorAccess** (sesión de 8 h o más).
+4. **AWS accounts →** marcar la cuenta **→ Assign users or groups →** tu usuario con `AdministratorAccess`.
+5. En tu máquina:
    ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
+   aws configure sso   # Start URL: la "AWS access portal URL" del dashboard de Identity Center
+                       # SSO region y default region: us-east-2
+                       # Profile name: oci-admin
    ```
-* Clonar el repositorio `tools` e instalar el paquete `oci-server-tools` que contiene algunos scripts útiles para trabajar en el servidor. El script `cms-tools` contiene algunos comandos para configurar y controlar todos los hosts (main y workers) desde el main host.
-   ```bash
-   git clone https://github.com/OCIoficial/tools
-   uv tool install --editable $HOME/tools/oci-server-tools
-   ```
-* Generar `conf.yaml` con `cms-tools` y modificarlo con los datos de los host. El yaml contiene comentarios. Debes usar las credenciales creadas para la base de datos en el paso anterior. Puedes dejar la cantidad de hosts que actuarán como workers en cero por ahora, ya que no son necesarios para subir los problemas.
-   ```bash
-   cms-tools init-conf
-   nvim conf.yaml
-   ```
-* Copiar `cms.toml` a los hosts. Cada vez que hagas modificaciones a `conf.yaml` debes generar y copiar `cms.toml`.
-   ```bash
-   cms-tools copy-conf
-   ```
-* Inicializar base de datos en CMS. Si la configuración de la base de datos en el paso anterior fue exitosa, este comando debiese ejecutarse sin problemas. En caso contrario deberás asegurarte de que la base de datos esté configurada correctamente.
-  ```bash
-  cmsInitDB
-  ```
-   
-### Levantar CMS
+6. Cuando la sesión expire: `aws sso login --profile oci-admin`.
 
-* Iniciar el `LogService`. Esto crea una sesión de `screen` y corre el `LogService` en esta. Es necesario tener el log service corriendo antes de levantar otros servicios.
-   ```bash
-   cms-tools restart-log-service
-   ```
-* Iniciar el `ResourceService` en todos los hosts. El resource service se encarga de monitorear todos los servicios de cms. Dada la configuración de `cms.toml` que copiamos a todos los hosts, el resource service se encargará de que los hosts corran los servicios necesarios. Una vez iniciado el `ResourceService` debieses ser capaz de ingresar a la consola de administración web en la ip del main host en el puerto 8889.
-  ```bash
-  cms-tools restart-resource-service
-  ```
-* Para ingresar a la consola de administración web, debes primero crear una cuenta.
-  ```bash
-  cmsAddAdmin <username> -p <password>
-  ```
-* En este momento debiese estar todo lo necesario para crear un contest y subir los problemas.
+### Cloudflare
 
-### Ranking
-* Puedes copiar las imágenes con el logo de la OCI y las banderas de las regiones usando cms-tools
-  ```bash
-  cms-tools copy-ranking-images
-  ```
-* Para iniciar el ranking debes estar seguro de que el `ProxyService` esté corriendo. El `ProxyService` solo se levanta por el `ResourceService` cuando está corriendo para solo un contest. Una vez este corriendo el `ProxyService` puedes levantar el ranking con:
-  ```bash
-  cms-tools restart-ranking
-  ```
+Crear dos tokens en **My Profile → API Tokens → Create Token → plantilla "Edit zone DNS" → Use template**. En cada uno:
 
-## Configurar subdominios de olimpiada-informatica.cl
+- **Token name:** `cms-terraform` o `cms-certbot`.
+- **Permissions:** dejar lo que trae la plantilla (*Zone → DNS → Edit*).
+- **Zone Resources:** cambiar a *Include → Specific zone → `olimpiada-informatica.cl`*. Es lo único que hay que cambiar.
+- **Client IP Address Filtering** y **TTL:** dejar vacíos. Si el token de certbot vence, la renovación del certificado falla sin aviso.
 
-### Configurar nginx
+Copiar el valor al crearlo (se muestra una sola vez). Si la cuenta de Cloudflare tiene varios miembros, crearlos mejor en **Manage Account → Account API Tokens**, con la misma configuración, para que no dependan de tu usuario.
 
-* En la máquina principal instalar y habilitar nginx
-  ```bash
-  sudo apt-get install nginx
-  sudo systemctl enable --now nginx.service
-  ```
-* Copiar `cms.nginx` a `sites-enabled` y modificar el archivo con los subdominios deseados. Este archivo contiene la configuración para redirigir el tráfico HTTP al ContestWebServer, al AdminWebServer y al RankingWebServer. No olvidar reiniciar nginx después de hacer cambios.
-  ```bash
-  sudo cp cms-install/cms.nginx /etc/nginx/sites-enabled
-  sudo vim /etc/nginx/sites-enabled/cms.nginx
-  sudo systemctl restart nginx.service
-  ```
+| Token | Variable | Uso |
+|---|---|---|
+| `terraform` | `CLOUDFLARE_API_TOKEN` | Terraform crea y borra los registros DNS. Solo vive en tu máquina. |
+| `certbot` | `TF_VAR_cloudflare_certbot_token` | Terraform lo copia a la principal para obtener y renovar el certificado HTTPS. |
 
-### Crear entradas en Cloudflare
+El `cloudflare_zone_id` está en la página **Overview** de la zona, en la columna derecha.
 
-Agregar entradas tipo `A` al DNS apuntando a la IP pública del main host con los subdominios deseados. Preocuparse de dejar desmarcada la opción proxy, es decir, que la entrada sea `DNS only`.
+## Arquitectura
 
-### Configurar HTTPS
+```
+Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
+                      nginx → ContestWebServer / AdminWebServer / Ranking
+                      PostgreSQL y el resto de los servicios de CMS
+                      │  red privada 10.20.1.0/24
+                      ├── worker-1 (c7i.large, 10.20.1.11)
+                      └── worker-2 (c7i.large, 10.20.1.12)
+```
 
-Puedes usar cerbot para generar un certificado y configurar nginx para redirigir el tráfico HTTPS.
+- **Terraform** (`terraform/`) crea una VPC propia, los security groups, las máquinas, un bucket S3 con scripts y configuración, los secretos (contraseñas generadas al azar) y los registros DNS. `terraform destroy` borra todo eso, incluidos los datos de CMS.
+- **Workers apagados por defecto.** Con `workers_running = false` quedan detenidos y solo se paga su disco. Un worker de CMS corre en la principal para poder probar. Con `true` se encienden y la principal deja de evaluar. Tienen IPs privadas fijas, así que la configuración no cambia al apagarlos y encenderlos.
+- **Configuración.** Terraform genera `cms.toml` y lo sube a S3. Cada máquina lo baja al iniciar los servicios de CMS (`cms-sync-config`), así que cambiar la configuración no recrea máquinas.
+- **Primer arranque.** Cada máquina baja `scripts/` desde S3 y ejecuta `setup-main.sh` o `setup-worker.sh`: dependencias, isolate, CMS en `/home/ubuntu/cms` y servicios systemd. En la principal también PostgreSQL, el administrador y nginx. Si la máquina se apaga a medias, la instalación sigue en el próximo arranque. Log: `/var/log/cloud-init-output.log`.
+- **HTTPS.** Al final del `apply`, Terraform ejecuta `cms-https` en la principal: certificado de Let's Encrypt con verificación DNS en Cloudflare. Queda fuera del primer arranque para que un error de certbot se pueda reintentar con otro `apply`.
+- **Servicios** (systemd): `cms-log` y `cms-ranking` en la principal, y `cms-resource` en todas las máquinas. Este último levanta los servicios de CMS que le corresponden a cada máquina según su IP.
+- **Acceso.** SSH a la principal con tu llave (`ssh_public_key_path`) o por SSM (`terraform output ssm_main`). Desde la principal, `ssh worker-1`, `ssh worker-2`.
 
-* Intalar certbot
-  ```bash
-  sudo snap install --classic certbot
-  sudo ln -s /snap/bin/certbot /usr/bin/certbot
-  ```
-* Generar certificados y configurar ngix para redirigir el tráfico https. Ejecuta el comando y luego sigue las instrucciones. El script lee los servidores habilitados en nginx y te pregunta cuál dominio quieres configurar.
-  ```bash
-  sudo certbot --nginx
-  ```
-  
-Para mas detalles puedes revisar las instrucciones en la página de certbot [aquí](https://certbot.eff.org/instructions?ws=nginx&os=pip) 
+### Comandos en la principal
+
+| Comando | Qué hace |
+|---|---|
+| `sudo cms-contest <id\|ALL>` | Baja la configuración, asocia CMS al concurso y reinicia CMS en todas las máquinas. Terraform lo ejecuta solo al cambiar `contest_id` o la configuración. |
+| `sudo cms-ranking-reset` | Borra los datos del ranking y los vuelve a cargar desde CMS. |
+| `sudo cms-https` | Obtiene o cambia el certificado HTTPS. Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios o `letsencrypt_staging`. |
+| `cms-backup` | Exporta los concursos a `~/cms-backups/`. Bajarlos con `scp` antes de `terraform destroy`. |
+| `journalctl -u cms-resource -f` | Logs de CMS. Los logs detallados están en `~/cms/log/`. |
+
+## Prueba local
+
+`test/run.sh` prueba el despliegue sin AWS, en VMs de Incus con las mismas IPs y el mismo `user_data` que en EC2. Terraform real genera la configuración contra [moto](https://github.com/getmoto/moto), que simula S3. Prueba la principal, un worker y el cambio de modo preparación a competencia. No prueba IAM, security groups ni HTTPS. Requiere `incus`, `terraform`, `aws` y `uv`. `test/run.sh clean` borra todo.
+
+## Versión de CMS
+
+Se instala la rama `main` de CMS (1.6.dev0), fijada a un commit en `cms_ref` de `terraform.tfvars`. La última release, v1.5.1, usa el formato de configuración antiguo (`cms.conf`). Todas las máquinas deben tener el mismo commit. Como `cms_ref` solo se usa al crear una máquina, para actualizar CMS hay que recrearlas: `cms-backup` y bajar el respaldo con `scp`, cambiar `cms_ref`, `terraform apply -replace=aws_instance.main -replace='aws_instance.worker[0]' ...` y restaurar con `cmsDumpImporter`.
+
+## Notas
+
+- `workers_running` se cambia en `terraform.tfvars`, no con `-var`. Si no, un `terraform apply` posterior sin el `-var` apagaría los workers.
+- Mientras se hacen pruebas de `destroy`/`apply`, usar `letsencrypt_staging = true`. Let's Encrypt emite como máximo 5 certificados por semana para los mismos dominios.
+- El estado de Terraform queda en `terraform/terraform.tfstate`, solo en el computador de quien hizo el `apply`. No se versiona porque contiene las contraseñas. Si se pierde, Terraform ya no puede modificar ni borrar lo que creó; respaldarlo y pasárselo a quien vaya a administrar el despliegue.
+- Respaldar CMS (`cms-backup` + `scp`) al terminar cada competencia y antes de cambiar `cms_ref` o hacer `destroy`.
+- Cambios en `scripts/` solo afectan a máquinas nuevas, salvo los comandos de `scripts/bin/`, que se pueden copiar a mano.

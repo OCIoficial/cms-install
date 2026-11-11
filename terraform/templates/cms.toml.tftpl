@@ -1,0 +1,68 @@
+# Generado por Terraform (terraform/config.tf). No editar en el servidor:
+# los cambios se pierden en el próximo cms-sync-config.
+
+[global]
+backdoor = false
+file_log_debug = false
+stream_log_detailed = false
+temp_dir = "/tmp"
+
+[services]
+LogService = [["${main_ip}", 29000]]
+ResourceService = ${resource_services}
+ScoringService = [["${main_ip}", 28500]]
+Checker = [["${main_ip}", 22000]]
+EvaluationService = [["${main_ip}", 25000]]
+Worker = ${workers}
+ContestWebServer = [["${main_ip}", 21000]]
+AdminWebServer = [["${main_ip}", 21100]]
+ProxyService = [["${main_ip}", 28600]]
+PrometheusExporter = []
+TelegramBot = []
+
+[database]
+url = "postgresql+psycopg2://cmsuser:${db_password}@${main_ip}:5432/cmsdb"
+debug = false
+twophase_commit = false
+
+[worker]
+keep_sandbox = false
+
+[sandbox]
+max_file_size = 1_048_576
+compilation_sandbox_max_processes = 1000
+compilation_sandbox_max_time_s = 10.0
+compilation_sandbox_max_memory_kib = 524_288
+trusted_sandbox_max_processes = 1000
+trusted_sandbox_max_time_s = 10.0
+trusted_sandbox_max_memory_kib = 4_194_304
+
+[web_server]
+secret_key = "${secret_key}"
+tornado_debug = false
+
+# Detrás de nginx (puertos solo locales); nginx envía la IP real en X-Forwarded-For
+[contest_web_server]
+listen_address = ["127.0.0.1"]
+listen_port = [8888]
+cookie_duration = 10800
+num_proxies_used = 1
+submit_local_copy = true
+submit_local_copy_path = "%s/submissions/"
+tests_local_copy = true
+tests_local_copy_path = "%s/tests/"
+max_submission_length = 100_000
+max_input_length = 5_000_000
+
+[admin_web_server]
+listen_address = "127.0.0.1"
+listen_port = 8889
+cookie_duration = 36000
+num_proxies_used = 1
+
+[proxy_service]
+rankings = ["http://ranking:${ranking_password}@127.0.0.1:8890/"]
+
+[prometheus]
+listen_address = "127.0.0.1"
+listen_port = 8811

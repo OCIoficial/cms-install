@@ -1,0 +1,54 @@
+#! /usr/bin/bash
+# Uso (en la principal): cms-https
+#
+# Obtiene o cambia el certificado de Let's Encrypt para los subdominios
+# (verificación DNS-01 con Cloudflare) y configura nginx para HTTPS. Lo ejecuta
+# Terraform (commands.tf) al crear o recrear la principal y al cambiar los
+# subdominios o `letsencrypt_staging`. La renovación periódica es automática.
+
+set -euo pipefail
+. /opt/cms-deploy/lib.sh
+require_root "$@"
+
+/usr/local/bin/cms-sync-config
+# shellcheck disable=SC1091
+. "$CMS_HOME/etc/cluster.env"
+
+# Configuración de nginx actual (los subdominios pueden haber cambiado).
+# certbot le vuelve a agregar la parte HTTPS más abajo. Si algo falla, se
+# restaura la anterior para no perder HTTPS en la próxima recarga de nginx.
+NGINX_CONF=/etc/nginx/sites-available/cms
+cp "$NGINX_CONF" "$NGINX_CONF.bak"
+restore_nginx() {
+  echo "Error: se restaura la configuración anterior de nginx" >&2
+  mv "$NGINX_CONF.bak" "$NGINX_CONF"
+  nginx -t && systemctl reload nginx.service
+}
+trap restore_nginx ERR
+s3_get config/cms.nginx "$NGINX_CONF"
+nginx -t
+
+args=(
+  --non-interactive --agree-tos -m "$LE_EMAIL"
+  --authenticator dns-cloudflare
+  --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+  --dns-cloudflare-propagation-seconds 30
+  --installer nginx --redirect
+  --cert-name cms
+)
+for domain in $DOMAINS; do
+  args+=(-d "$domain")
+done
+
+if [[ $LE_STAGING == true ]]; then
+  args+=(--test-cert --reinstall)
+elif grep -qs staging /etc/letsencrypt/renewal/cms.conf; then
+  # Pasar de un certificado de prueba a uno real
+  args+=(--force-renewal)
+else
+  args+=(--reinstall)
+fi
+
+certbot run "${args[@]}"
+trap - ERR
+rm -f "$NGINX_CONF.bak"

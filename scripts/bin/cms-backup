@@ -1,0 +1,17 @@
+#! /usr/bin/bash
+# Uso (en la principal): cms-backup
+#
+# Exporta todos los concursos con cmsDumpExporter a ~/cms-backups/ en la
+# principal. Bájalo a tu computador antes de `terraform destroy`:
+#   scp ubuntu@<ip>:cms-backups/*.tar.gz .
+# Para restaurar: copiar el archivo a la principal y usar cmsDumpImporter.
+
+set -euo pipefail
+. /opt/cms-deploy/lib.sh
+reexec_as_ubuntu "$@"
+
+DIR=/home/ubuntu/cms-backups
+mkdir -p "$DIR"
+FILE=$DIR/cms-dump-$(date +%Y%m%d-%H%M%S).tar.gz
+"$CMS_BIN/cmsDumpExporter" -G "$FILE"
+echo "Respaldo en $FILE"

@@ -1,0 +1,50 @@
+#! /usr/bin/bash
+# Baja desde S3 la configuración de CMS que genera Terraform (cms.toml y, en la
+# principal, cms_ranking.toml y cluster.env). Corre automáticamente antes de
+# iniciar los servicios de CMS. Correrlo a mano después de un `terraform apply`
+# que cambie la configuración (o usar cms-contest, que lo hace por ti).
+
+set -euo pipefail
+. /opt/cms-deploy/lib.sh
+reexec_as_ubuntu "$@"
+
+umask 077
+ETC=$CMS_HOME/etc
+mkdir -p "$ETC"
+
+# Una ejecución a la vez: los servicios de CMS y los comandos de Terraform
+# (cms-contest, cms-https) pueden llamarlo al mismo tiempo
+exec 9>"$ETC/.sync-config.lock"
+flock 9
+
+fetch() {
+  s3_get "config/$1" "$ETC/$1.tmp"
+  mv "$ETC/$1.tmp" "$ETC/$1"
+}
+
+fetch cms.toml
+
+if [[ $ROLE == main ]]; then
+  fetch cms_ranking.toml
+  fetch cluster.env
+  # shellcheck disable=SC1091
+  . "$ETC/cluster.env"
+
+  # Alias SSH a los workers: ssh worker-1, ssh worker-2, ...
+  SSH_DIR=/home/ubuntu/.ssh
+  mkdir -p "$SSH_DIR"
+  {
+    i=1
+    for ip in $WORKER_IPS; do
+      printf 'Host worker-%d\n  HostName %s\n\n' "$i" "$ip"
+      i=$((i + 1))
+    done
+    # Las IPs de los workers se reutilizan al recrearlos, por eso no se fija la host key
+    printf 'Host worker-*\n  User ubuntu\n  IdentityFile ~/.ssh/id_cms_workers\n'
+    printf '  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  LogLevel ERROR\n'
+  } > "$SSH_DIR/cms_workers"
+  touch "$SSH_DIR/config"
+  if ! grep -qxF 'Include ~/.ssh/cms_workers' "$SSH_DIR/config"; then
+    printf 'Include ~/.ssh/cms_workers\n\n%s' "$(cat "$SSH_DIR/config")" > "$SSH_DIR/config"
+  fi
+fi

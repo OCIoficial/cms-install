@@ -1,0 +1,15 @@
+[Unit]
+Description=CMS RankingWebServer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/cms
+ExecStartPre=/usr/local/bin/cms-sync-config
+ExecStart=/home/ubuntu/cms/bin/cmsRankingWebServer
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
