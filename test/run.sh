@@ -46,10 +46,13 @@ apply() {
 checks() {
   local mode status=0
   mode=$([[ $(cat "$WORK/workers_running") == true ]] && echo contest || echo prep)
-  # El script va como argumento (no por stdin, que consumirían ssh/psql)
-  incus exec "$MAIN" -- bash -c "$(cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-main.sh")" check "$mode" || status=1
+  # Se copian a la VM y se ejecutan desde un archivo: si el texto del script
+  # quedara en la línea de comandos, `pgrep -f` lo encontraría a sí mismo
+  cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-main.sh" | incus exec "$MAIN" -- sh -c 'cat > /root/check-main.sh'
+  cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-worker.sh" | incus exec "$MAIN" -- sh -c 'cat > /root/check-worker.sh'
+  incus exec "$MAIN" -- bash /root/check-main.sh "$mode" || status=1
   if [[ $mode == contest ]]; then
-    incus exec "$MAIN" -- bash -c "$(cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-worker.sh")" check || status=1
+    incus exec "$MAIN" -- bash /root/check-worker.sh || status=1
   fi
   return $status
 }
@@ -95,8 +98,10 @@ esac
 clean
 mkdir -p "$WORK"
 
-# Red con el mismo rango que la VPC (10.20.0.0/16)
-incus network create "$NET" ipv4.address=10.20.0.1/16 ipv4.nat=true ipv6.address=none
+# Red con el mismo rango que la VPC (10.20.0.0/16). Las VMs resuelven nombres con
+# DNS públicos, no con el de tu red (que puede filtrar o tener caché vencido).
+incus network create "$NET" ipv4.address=10.20.0.1/16 ipv4.nat=true ipv6.address=none \
+  raw.dnsmasq="$(printf 'no-resolv\nserver=8.8.8.8\nserver=1.1.1.1')"
 
 # S3 local
 nohup uvx --from 'moto[server]' moto_server -H 10.20.0.1 -p 5000 > "$WORK/moto.log" 2>&1 &
