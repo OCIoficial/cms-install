@@ -18,6 +18,15 @@ CMS_BIN=$CMS_HOME/bin
 # Copia un objeto del bucket de assets: s3_get <key> <destino|->
 s3_get() { "$AWS" --region "$AWS_REGION" s3 cp --only-show-errors "s3://$ASSETS_BUCKET/$1" "$2"; }
 
+# Baja un zip del bucket y lo extrae en <dir>, sobrescribiendo: s3_unzip <key> <dir>
+s3_unzip() {
+  local zip
+  zip=$(mktemp)
+  s3_get "$1" "$zip"
+  unzip -q -o "$zip" -d "$2"
+  rm -f "$zip"
+}
+
 as_ubuntu() { sudo -u ubuntu -H "$@"; }
 
 # Si se corre como root, vuelve a ejecutar el script como ubuntu

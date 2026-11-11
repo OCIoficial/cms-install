@@ -30,7 +30,8 @@ if [[ -z $(sudo -u postgres psql -d cmsdb -tAc "SELECT 1 FROM admins WHERE usern
 fi
 
 # Imágenes del ranking (logo y banderas)
-as_ubuntu "$AWS" --region "$AWS_REGION" s3 sync --only-show-errors "s3://$ASSETS_BUCKET/ranking" "$CMS_HOME/lib/ranking"
+s3_unzip ranking.zip "$CMS_HOME/lib/ranking"
+chown -R ubuntu:ubuntu "$CMS_HOME/lib/ranking"
 
 # Llave SSH para conectarse a los workers (ssh worker-1, ssh worker-2, ...)
 install -d -m 700 -o ubuntu -g ubuntu /home/ubuntu/.ssh

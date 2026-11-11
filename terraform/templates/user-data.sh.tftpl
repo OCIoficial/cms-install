@@ -53,7 +53,11 @@ if [[ ! -x /usr/local/bin/aws ]]; then
   "$TMP/aws/install"
   rm -rf "$TMP"
 fi
-/usr/local/bin/aws --region "$AWS_REGION" s3 sync --only-show-errors "s3://$ASSETS_BUCKET/scripts" /opt/cms-deploy
+TMP=$(mktemp -d)
+/usr/local/bin/aws --region "$AWS_REGION" s3 cp --only-show-errors "s3://$ASSETS_BUCKET/scripts.zip" "$TMP/scripts.zip"
+rm -rf /opt/cms-deploy
+unzip -q "$TMP/scripts.zip" -d /opt/cms-deploy
+rm -rf "$TMP"
 chmod -R a+rx /opt/cms-deploy
 
 "/opt/cms-deploy/setup-$ROLE.sh"

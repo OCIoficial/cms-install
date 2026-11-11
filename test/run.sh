@@ -72,7 +72,7 @@ checks() {
   # quedara en la línea de comandos, `pgrep -f` lo encontraría a sí mismo
   cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-main.sh" | incus exec "$MAIN" -- sh -c 'cat > /root/check-main.sh'
   cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-worker.sh" | incus exec "$MAIN" -- sh -c 'cat > /root/check-worker.sh'
-  incus exec "$MAIN" -- bash /root/check-main.sh "$mode" || status=1
+  incus exec "$MAIN" -- bash /root/check-main.sh "$mode" "$(find "$ROOT/ranking/flags" -name '*.png' | wc -l)" || status=1
   if [[ $mode == contest ]]; then
     incus exec "$MAIN" -- bash /root/check-worker.sh || status=1
   fi
@@ -136,6 +136,8 @@ rm -f "$WORK/terraform/terraform.tfstate"* "$WORK/terraform/secrets.auto.tfvars"
 cp "$ROOT"/test/terraform/*.tf "$WORK/terraform/"
 # Sin Cloudflare: no pedir certificado
 printf '#!/bin/bash\necho "cms-https: omitido en la prueba"\n' > "$WORK/scripts/bin/cms-https"
+# Archivo que se borra más adelante: debe desaparecer de las máquinas
+echo "obsoleto" > "$WORK/scripts/obsoleto.txt"
 tf init -input=false >/dev/null
 
 status=0
@@ -159,12 +161,15 @@ echo "Apagando $WORKER a mitad de la instalación"
 incus stop -f "$WORKER"
 wait_boot "$MAIN"
 checks || status=1
+result "$MAIN: scripts/obsoleto.txt instalado (se borra más adelante)" \
+  incus exec "$MAIN" -- test -f /opt/cms-deploy/obsoleto.txt
 
 echo
 echo "== Modo competencia (workers_running = true), con un cambio en scripts/"
 MARK="# prueba de actualización $(date +%s)"
 echo "$MARK" >> "$WORK/scripts/bin/cms-backup"
 echo "$MARK" >> "$WORK/scripts/systemd/cms-log.service"
+rm "$WORK/scripts/obsoleto.txt"
 apply true
 worker_state running
 run_on_main cms-contest ALL
@@ -173,6 +178,7 @@ echo "-- Scripts actualizados en máquinas existentes"
 for vm in "$MAIN" "$WORKER"; do
   result "$vm: comando nuevo" incus exec "$vm" -- grep -qxF "$MARK" /usr/local/bin/cms-backup
   result "$vm: servicio nuevo" incus exec "$vm" -- grep -qxF "$MARK" /etc/systemd/system/cms-log.service
+  result "$vm: archivo borrado de scripts/ ya no está" incus exec "$vm" -- test ! -e /opt/cms-deploy/obsoleto.txt
   result "$vm: systemd recargado" \
     bash -c "[[ \$(incus exec $vm -- systemctl show -p NeedDaemonReload --value cms-log) == no ]]"
 done

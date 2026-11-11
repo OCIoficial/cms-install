@@ -17,7 +17,7 @@ resource "terraform_data" "cms_contest" {
     main_id    = aws_instance.main.id
     contest_id = var.contest_id
     cms_toml   = sha256(local.cms_toml)
-    scripts    = local.scripts_hash
+    scripts    = data.archive_file.scripts.output_sha256
   }
 
   provisioner "local-exec" {

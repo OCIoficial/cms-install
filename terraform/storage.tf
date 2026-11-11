@@ -14,30 +14,37 @@ resource "aws_s3_bucket_public_access_block" "assets" {
   restrict_public_buckets = true
 }
 
-locals {
-  scripts_dir = "${path.module}/../scripts"
-  ranking_dir = "${path.module}/../ranking"
-  # Cambia si cambia cualquier archivo de scripts/ (ver cms_contest en commands.tf)
-  scripts_hash = sha256(join(",", [
-    for f in sort(fileset(local.scripts_dir, "**")) : "${f}=${filemd5("${local.scripts_dir}/${f}")}"
-  ]))
+# scripts/ y ranking/ se suben como un zip cada uno (terraform/.build/, no se
+# versiona). Los permisos fijos hacen que el zip salga igual en cualquier
+# máquina, así un apply sin cambios no lo vuelve a subir.
+data "archive_file" "scripts" {
+  type             = "zip"
+  source_dir       = "${path.module}/../scripts"
+  output_path      = "${path.module}/.build/scripts.zip"
+  output_file_mode = "0755"
+}
+
+data "archive_file" "ranking" {
+  type             = "zip"
+  source_dir       = "${path.module}/../ranking"
+  output_path      = "${path.module}/.build/ranking.zip"
+  output_file_mode = "0644"
 }
 
 resource "aws_s3_object" "scripts" {
-  for_each = fileset(local.scripts_dir, "**")
-  bucket   = aws_s3_bucket.assets.id
-  key      = "scripts/${each.value}"
-  source   = "${local.scripts_dir}/${each.value}"
-  etag     = filemd5("${local.scripts_dir}/${each.value}")
+  bucket       = aws_s3_bucket.assets.id
+  key          = "scripts.zip"
+  source       = data.archive_file.scripts.output_path
+  etag         = data.archive_file.scripts.output_md5
+  content_type = "application/zip"
 }
 
 resource "aws_s3_object" "ranking" {
-  for_each     = fileset(local.ranking_dir, "**/*.png")
   bucket       = aws_s3_bucket.assets.id
-  key          = "ranking/${each.value}"
-  source       = "${local.ranking_dir}/${each.value}"
-  etag         = filemd5("${local.ranking_dir}/${each.value}")
-  content_type = "image/png"
+  key          = "ranking.zip"
+  source       = data.archive_file.ranking.output_path
+  etag         = data.archive_file.ranking.output_md5
+  content_type = "application/zip"
 }
 
 resource "aws_s3_object" "config" {

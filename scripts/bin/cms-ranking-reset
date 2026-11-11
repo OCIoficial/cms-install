@@ -12,8 +12,8 @@ require_root "$@"
 systemctl stop cms-ranking.service
 # --drop borra todo lib/ranking, incluidas las imágenes
 as_ubuntu "$CMS_BIN/cmsRankingWebServer" --drop --yes
-as_ubuntu "$AWS" --region "$AWS_REGION" s3 sync --only-show-errors \
-  "s3://$ASSETS_BUCKET/ranking" "$CMS_HOME/lib/ranking"
+s3_unzip ranking.zip "$CMS_HOME/lib/ranking"
+chown -R ubuntu:ubuntu "$CMS_HOME/lib/ranking"
 systemctl start cms-ranking.service
 systemctl restart cms-resource.service
 echo "Ranking reiniciado"

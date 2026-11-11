@@ -1,15 +1,24 @@
 #! /usr/bin/bash
 # Corre en la principal (como root), precedido de lib-check.sh. Ver test/run.sh.
-# Argumento: prep | contest. Verifica que la máquina principal quedó funcionando.
+# Argumentos: prep | contest, y cuántas banderas tiene ranking/flags en el repo.
+# Verifica que la máquina principal quedó funcionando.
 
 set -uo pipefail
 MODE=$1
+FLAGS=$2
+RANKING=/home/ubuntu/cms/lib/ranking
 CONTEST=$(sed -n 's/^CONTEST=//p' /etc/cms/contest)
 
 http_ok() { # http_ok <host> -> 2xx/3xx a través de nginx
   local code
   code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $1" http://127.0.0.1/)
   [[ $code =~ ^[23] ]]
+}
+
+ranking_images() { # logo y todas las banderas del zip, de ubuntu (el ranking escribe ahí)
+  test -f $RANKING/logo.png \
+    && [[ $(find $RANKING/flags -name '*.png' | wc -l) -eq $FLAGS ]] \
+    && [[ -z $(find $RANKING ! -user ubuntu) ]]
 }
 
 echo "== Principal (modo $MODE, concurso $CONTEST)"
@@ -35,7 +44,7 @@ echo "-- Web (nginx)"
 check "ContestWebServer (cms.test)" wait_for 30 http_ok cms.test
 check "AdminWebServer (cms-admin.test)" wait_for 30 http_ok cms-admin.test
 check "Ranking (ranking.test)" wait_for 30 http_ok ranking.test
-check "logo del ranking" test -f /home/ubuntu/cms/lib/ranking/logo.png
+check "logo y $FLAGS banderas del ranking, de ubuntu" ranking_images
 
 echo "-- Sandbox (isolate como ubuntu)"
 check "isolate ejecuta un programa" sudo -u ubuntu bash -c \
@@ -45,7 +54,7 @@ echo "-- Comandos de operación"
 check "cms-contest $CONTEST" cms-contest "$CONTEST"
 check "cms-resource activo después de cms-contest" wait_for 30 systemctl is-active --quiet cms-resource
 check "cms-ranking-reset" cms-ranking-reset
-check "logo restaurado después del reset" test -f /home/ubuntu/cms/lib/ranking/logo.png
+check "logo y banderas restaurados después del reset" ranking_images
 check "cms-backup" cms-backup
 check "respaldo en ~/cms-backups" bash -c 'ls /home/ubuntu/cms-backups/cms-dump-*.tar.gz'
 if [[ $MODE == prep ]]; then

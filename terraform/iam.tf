@@ -24,18 +24,9 @@ data "aws_iam_policy_document" "main" {
 
 data "aws_iam_policy_document" "worker" {
   statement {
-    actions   = ["s3:ListBucket"]
-    resources = [aws_s3_bucket.assets.arn]
-    condition {
-      test     = "StringLike"
-      variable = "s3:prefix"
-      values   = ["scripts/*", "scripts"]
-    }
-  }
-  statement {
     actions = ["s3:GetObject"]
     resources = [
-      "${aws_s3_bucket.assets.arn}/scripts/*",
+      "${aws_s3_bucket.assets.arn}/scripts.zip",
       "${aws_s3_bucket.assets.arn}/config/cms.toml",
     ]
   }
