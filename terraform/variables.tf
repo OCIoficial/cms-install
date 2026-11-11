@@ -56,12 +56,12 @@ variable "domain" {
 }
 
 variable "cloudflare_zone_id" {
-  description = "Zone ID de la zona en Cloudflare (Overview de la zona, columna derecha)."
+  description = "Zone ID de la zona en Cloudflare (Overview de la zona, columna derecha). Va en secrets.auto.tfvars."
   type        = string
 
   validation {
     condition     = can(regex("^[0-9a-f]{32}$", var.cloudflare_zone_id))
-    error_message = "cloudflare_zone_id debe ser el Zone ID de Cloudflare (32 caracteres hexadecimales). Ver README, paso 3."
+    error_message = "cloudflare_zone_id debe ser el Zone ID de Cloudflare (32 caracteres hexadecimales), en secrets.auto.tfvars. Ver README, sección Credenciales."
   }
 }
 
@@ -75,12 +75,12 @@ variable "subdomains" {
 }
 
 variable "letsencrypt_email" {
-  description = "Correo para avisos de Let's Encrypt."
+  description = "Correo para avisos de Let's Encrypt. Va en secrets.auto.tfvars."
   type        = string
 
   validation {
     condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.letsencrypt_email))
-    error_message = "letsencrypt_email debe ser un correo válido. Ver README, paso 3."
+    error_message = "letsencrypt_email debe ser un correo válido, en secrets.auto.tfvars. Ver README, sección Credenciales."
   }
 }
 
@@ -90,8 +90,16 @@ variable "letsencrypt_staging" {
   default     = false
 }
 
+# Los tokens van en terraform/secrets.auto.tfvars (no se versiona). Ver README, "Credenciales".
+variable "cloudflare_api_token" {
+  description = "Token de Cloudflare (DNS edit) con que Terraform crea los registros DNS. null: se usa CLOUDFLARE_API_TOKEN del entorno."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "cloudflare_certbot_token" {
-  description = "Token de Cloudflare (DNS edit) que usa certbot en la principal. Pasar con TF_VAR_cloudflare_certbot_token."
+  description = "Token de Cloudflare (DNS edit) que usa certbot en la principal."
   type        = string
   sensitive   = true
 }
@@ -99,6 +107,12 @@ variable "cloudflare_certbot_token" {
 # ---------------------------------------------------------------------------
 # AWS
 # ---------------------------------------------------------------------------
+
+variable "aws_profile" {
+  description = "Perfil de la AWS CLI (aws configure sso) con que Terraform se conecta a AWS. null: se usa AWS_PROFILE o las credenciales del entorno."
+  type        = string
+  default     = "oci-admin"
+}
 
 variable "region" {
   description = "Región de AWS."

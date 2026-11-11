@@ -7,11 +7,8 @@ Despliegue de [CMS](https://github.com/cms-dev/cms) para la OCI en AWS con Terra
 ### Primera vez
 
 1. Instalar [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.10 y AWS CLI v2 (en Arch: `pacman -S terraform aws-cli-v2`).
-2. Configurar las [credenciales](#credenciales) y cargarlas: `source .env`.
-3. Completar en `terraform/terraform.tfvars`:
-   - `cloudflare_zone_id`: está en la página **Overview** de la zona en Cloudflare, columna derecha.
-   - `letsencrypt_email`: correo para los avisos de vencimiento de Let's Encrypt.
-   - `ssh_public_key_path`: solo si tu llave pública SSH no es `~/.ssh/id_ed25519.pub`.
+2. Configurar las [credenciales](#credenciales) y crear `terraform/secrets.auto.tfvars`.
+3. Si tu llave pública SSH no es `~/.ssh/id_ed25519.pub`, definir `ssh_public_key_path` en `terraform/terraform.tfvars`.
 4. Crear todo:
    ```bash
    cd terraform
@@ -53,12 +50,13 @@ Para agregar más administradores (mejor uno por persona): desde la sección **A
 
 ## Credenciales
 
-Terraform y `aws` leen las credenciales desde variables de entorno. Guárdalas en un archivo `.env` en la raíz del repo (está en `.gitignore`, no se versiona):
+Terraform usa el perfil `oci-admin` de la AWS CLI (variable `aws_profile`) y lee los datos de Cloudflare y el correo de Let's Encrypt de `terraform/secrets.auto.tfvars`. Terraform carga ese archivo solo, y está en `.gitignore`, así que no se versiona. Crearlo así:
 
-```bash
-export AWS_PROFILE=oci-admin
-export CLOUDFLARE_API_TOKEN=...            # token "terraform"
-export TF_VAR_cloudflare_certbot_token=... # token "certbot"
+```hcl
+cloudflare_zone_id       = "..."      # Zone ID de olimpiada-informatica.cl
+cloudflare_api_token     = "cfut_..." # token cms-terraform
+cloudflare_certbot_token = "cfut_..." # token cms-certbot
+letsencrypt_email        = "..."      # correo para los avisos de vencimiento del certificado
 ```
 
 ### AWS
@@ -73,25 +71,37 @@ No usar el usuario root. Se usa un usuario de IAM Identity Center (gratis) con c
    ```bash
    aws configure sso   # Start URL: la "AWS access portal URL" del dashboard de Identity Center
                        # SSO region y default region: us-east-2
-                       # Profile name: oci-admin
+                       # Profile name: oci-admin (si usas otro, definir aws_profile en terraform.tfvars)
    ```
 6. Cuando la sesión expire: `aws sso login --profile oci-admin`.
 
 ### Cloudflare
 
-Crear dos tokens en **My Profile → API Tokens → Create Token → plantilla "Edit zone DNS" → Use template**. En cada uno:
+Se necesitan dos tokens con el mismo permiso: editar el DNS de `olimpiada-informatica.cl`, y nada más. Uno es para Terraform y otro para certbot, que queda guardado en la principal. Para crear cada uno ([documentación](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)):
 
-- **Token name:** `cms-terraform` o `cms-certbot`.
-- **Permissions:** dejar lo que trae la plantilla (*Zone → DNS → Edit*).
-- **Zone Resources:** cambiar a *Include → Specific zone → `olimpiada-informatica.cl`*. Es lo único que hay que cambiar.
-- **Client IP Address Filtering** y **TTL:** dejar vacíos. Si el token de certbot vence, la renovación del certificado falla sin aviso.
+1. En el dashboard de Cloudflare: **My Profile → API Tokens → Create Token**.
+2. En la plantilla **Edit zone DNS**, **Use template**.
+3. **Token name:** `cms-terraform`.
+4. **Policies:** la plantilla trae una política, *Edit Zone policy*. Al abrirla:
+   - En la regla de recursos, elegir **Include · Specific zone · `olimpiada-informatica.cl`**.
+   - En los permisos, cada categoría muestra un contador, como `0/28`. Solo debe tener uno marcado la de DNS, con *Edit* (o *Write*), como viene en la plantilla. No marcar nada más.
+5. **Token expiration** y **Client IP address filtering:** dejar vacíos. Si el token de certbot vence, la renovación del certificado falla sin aviso.
+6. **Continue to summary.** Debe mostrar un solo permiso, DNS Edit (o Write), y solo en `olimpiada-informatica.cl`. Si no, **Back** y corregir.
+7. **Create Token** y copiar el valor en `terraform/secrets.auto.tfvars`. Empieza con `cfut_` y se muestra una sola vez.
 
-Copiar el valor al crearlo (se muestra una sola vez). Si la cuenta de Cloudflare tiene varios miembros, crearlos mejor en **Manage Account → Account API Tokens**, con la misma configuración, para que no dependan de tu usuario.
+Un token ya creado se puede editar desde la lista de **API Tokens**, con los mismos campos de los pasos 4 y 5. Para comprobar que funciona:
+
+```bash
+curl -s -H "Authorization: Bearer cfut_..." \
+  https://api.cloudflare.com/client/v4/user/tokens/verify   # debe decir "status": "active"
+```
+
+Los tokens de **My Profile** dependen de tu usuario: si sales de la cuenta de Cloudflare, dejan de funcionar. Si la cuenta tiene varios miembros, conviene crearlos en **Manage Account → Account API Tokens**, con la misma configuración. El permiso y la zona deben quedar iguales: *Zone · DNS · Edit*, solo en `olimpiada-informatica.cl`. Para crearlos hay que ser *Super Administrator* de la cuenta o tener permiso para crear tokens de cuenta. Estos tokens se verifican en `https://api.cloudflare.com/client/v4/accounts/<account_id>/tokens/verify`.
 
 | Token | Variable | Uso |
 |---|---|---|
-| `terraform` | `CLOUDFLARE_API_TOKEN` | Terraform crea y borra los registros DNS. Solo vive en tu máquina. |
-| `certbot` | `TF_VAR_cloudflare_certbot_token` | Terraform lo copia a la principal para obtener y renovar el certificado HTTPS. |
+| `cms-terraform` | `cloudflare_api_token` | Terraform crea y borra los registros DNS. Solo vive en tu máquina. |
+| `cms-certbot` | `cloudflare_certbot_token` | Terraform lo copia a la principal para obtener y renovar el certificado HTTPS. |
 
 El `cloudflare_zone_id` está en la página **Overview** de la zona, en la columna derecha.
 

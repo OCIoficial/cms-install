@@ -3,4 +3,5 @@
 *.tfstate.*
 crash.log
 .env
+terraform/secrets.auto.tfvars
 test/.work/

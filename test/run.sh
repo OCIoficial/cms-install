@@ -131,7 +131,8 @@ until curl -s -o /dev/null "$MOTO"; do sleep 1; done
 
 # Terraform real sobre una copia del repo, con el proveedor apuntando a moto
 cp -r "$ROOT/terraform" "$ROOT/scripts" "$ROOT/ranking" "$WORK/"
-rm -f "$WORK/terraform/terraform.tfstate"*
+# Sin el estado ni los tokens reales
+rm -f "$WORK/terraform/terraform.tfstate"* "$WORK/terraform/secrets.auto.tfvars"
 cp "$ROOT"/test/terraform/*.tf "$WORK/terraform/"
 # Sin Cloudflare: no pedir certificado
 printf '#!/bin/bash\necho "cms-https: omitido en la prueba"\n' > "$WORK/scripts/bin/cms-https"

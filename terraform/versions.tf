@@ -23,9 +23,10 @@ terraform {
   # Estado local: terraform/terraform.tfstate (no se versiona; contiene contraseñas).
 }
 
-# Credenciales: AWS_PROFILE (aws configure sso) y CLOUDFLARE_API_TOKEN, desde el entorno.
+# Credenciales: perfil de AWS (aws_profile) y tokens en secrets.auto.tfvars. Ver README.
 provider "aws" {
-  region = var.region
+  region  = var.region
+  profile = var.aws_profile
 
   default_tags {
     tags = {
@@ -35,4 +36,6 @@ provider "aws" {
   }
 }
 
-provider "cloudflare" {}
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
+}

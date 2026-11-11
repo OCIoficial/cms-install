@@ -1,4 +1,6 @@
-# Configuración del despliegue. Se versiona en git (no contiene secretos).
+# Configuración del despliegue. Se versiona en git. Los tokens y el Zone ID de
+# Cloudflare y el correo de Let's Encrypt van en secrets.auto.tfvars, que no se
+# versiona (ver README).
 
 # --- Operación --------------------------------------------------------------
 # true: workers encendidos (competencia). false: apagados, 1 worker en la principal.
@@ -17,13 +19,11 @@ cms_ref = "bcf7a88f1d2ab35d9469dc7e2e185e1452d78e5e"
 # ssh_allowed_cidrs   = ["0.0.0.0/0"]
 
 # --- Dominio y HTTPS --------------------------------------------------------
-domain             = "olimpiada-informatica.cl"
-cloudflare_zone_id = "TODO"
+domain = "olimpiada-informatica.cl"
 subdomains = {
   contest = "cms"
   admin   = "cms-admin"
   ranking = "ranking"
 }
-letsencrypt_email = "TODO"
 # true mientras se prueba (destroy/apply frecuentes): evita el límite de Let's Encrypt
 letsencrypt_staging = true

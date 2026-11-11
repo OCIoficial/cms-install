@@ -1,6 +1,7 @@
 # Solo para test/run.sh: el proveedor de AWS usa moto (S3 local) en vez de AWS.
 provider "aws" {
   region                      = "us-east-2"
+  profile                     = null
   access_key                  = "test"
   secret_key                  = "test"
   s3_use_path_style           = true
