@@ -32,13 +32,6 @@ locals {
     admin   = local.domains.admin
     ranking = local.domains.ranking
   })
-
-  # Datos que lee cms-https en la principal y que pueden cambiar después de crearla
-  cluster_env = <<-EOT
-    DOMAINS="${join(" ", values(local.domains))}"
-    LE_EMAIL="${var.letsencrypt_email}"
-    LE_STAGING="${var.letsencrypt_staging}"
-  EOT
 }
 
 # ---------------------------------------------------------------------------

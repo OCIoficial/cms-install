@@ -131,7 +131,7 @@ Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
 | `sudo cms-contest <id\|ALL>` | Baja la configuración, asocia CMS al concurso y reinicia CMS en la principal. Terraform lo ejecuta solo al cambiar `contest_id` o la configuración, y después reinicia CMS en los workers encendidos (por SSM). |
 | `sudo cms-update-scripts` | Baja `scripts/` desde S3 e instala comandos y servicios. Corre solo al arrancar y antes de cada comando que Terraform ejecuta en una máquina. |
 | `sudo cms-ranking-reset` | Borra los datos del ranking y los vuelve a cargar desde CMS. |
-| `sudo cms-https` | Obtiene o cambia el certificado HTTPS. Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios o `letsencrypt_staging`. |
+| `sudo cms-https <correo> <true\|false> <dominio>...` | Obtiene o cambia el certificado HTTPS (`true`: certificado de prueba). Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios, el correo o `letsencrypt_staging`. |
 | `cms-backup` | Exporta los concursos a `~/cms-backups/`. Bajarlos con `scp` antes de `terraform destroy`. |
 | `journalctl -u cms-resource -f` | Logs de CMS. Los logs detallados están en `~/cms/log/`. |
 

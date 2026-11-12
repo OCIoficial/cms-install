@@ -1,6 +1,6 @@
 #! /usr/bin/bash
 # Baja desde S3 la configuración de CMS que genera Terraform (cms.toml y, en la
-# principal, cms_ranking.toml y cluster.env). Corre automáticamente antes de
+# principal, cms_ranking.toml). Corre automáticamente antes de
 # iniciar los servicios de CMS. Correrlo a mano después de un `terraform apply`
 # que cambie la configuración (o usar cms-contest, que lo hace por ti).
 
@@ -12,8 +12,8 @@ umask 077
 ETC=$CMS_HOME/etc
 mkdir -p "$ETC"
 
-# Una ejecución a la vez: los servicios de CMS y los comandos de Terraform
-# (cms-contest, cms-https) pueden llamarlo al mismo tiempo
+# Una ejecución a la vez: los servicios de CMS y cms-contest pueden llamarlo al
+# mismo tiempo
 exec 9>"$ETC/.sync-config.lock"
 flock 9
 
@@ -26,5 +26,4 @@ fetch cms.toml
 
 if [[ $ROLE == main ]]; then
   fetch cms_ranking.toml
-  fetch cluster.env
 fi

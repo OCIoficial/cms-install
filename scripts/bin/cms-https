@@ -1,18 +1,24 @@
 #! /usr/bin/bash
-# Uso (en la principal): cms-https
+# Uso (en la principal): cms-https <correo> <staging: true|false> <dominio>...
 #
 # Obtiene o cambia el certificado de Let's Encrypt para los subdominios
 # (verificación DNS-01 con Cloudflare) y configura nginx para HTTPS. Lo ejecuta
 # Terraform (commands.tf) al crear o recrear la principal y al cambiar los
-# subdominios o `letsencrypt_staging`. La renovación periódica es automática.
+# subdominios, el correo o `letsencrypt_staging`. La renovación periódica es
+# automática.
 
 set -euo pipefail
 . /opt/cms-deploy/lib.sh
+
+if [[ $# -lt 3 || ! $2 =~ ^(true|false)$ ]]; then
+  echo "Uso: cms-https <correo> <staging: true|false> <dominio>..." >&2
+  exit 1
+fi
 require_root "$@"
 
-/usr/local/bin/cms-sync-config
-# shellcheck disable=SC1091
-. "$CMS_HOME/etc/cluster.env"
+LE_EMAIL=$1
+LE_STAGING=$2
+shift 2
 
 # Configuración de nginx actual (los subdominios pueden haber cambiado).
 # certbot le vuelve a agregar la parte HTTPS más abajo. Si algo falla, se
@@ -36,7 +42,7 @@ args=(
   --installer nginx --redirect
   --cert-name cms
 )
-for domain in $DOMAINS; do
+for domain in "$@"; do
   args+=(-d "$domain")
 done
 

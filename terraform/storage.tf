@@ -52,7 +52,6 @@ resource "aws_s3_object" "config" {
     "config/cms.toml"         = local.cms_toml
     "config/cms_ranking.toml" = local.cms_ranking_toml
     "config/cms.nginx"        = local.cms_nginx
-    "config/cluster.env"      = local.cluster_env
   }
   bucket  = aws_s3_bucket.assets.id
   key     = each.key

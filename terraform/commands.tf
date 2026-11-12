@@ -45,18 +45,17 @@ resource "terraform_data" "cms_worker_restart" {
   depends_on = [aws_ec2_instance_state.worker]
 }
 
-# Obtiene o cambia el certificado HTTPS. Corre cuando cambian los dominios, el modo
-# staging o se recrea la principal (el primer arranque no pide certificado).
+# Obtiene o cambia el certificado HTTPS. Corre cuando cambian los dominios, el
+# correo, el modo staging o se recrea la principal (el primer arranque no pide
+# certificado).
 resource "terraform_data" "cms_https" {
   triggers_replace = {
     main_id = aws_instance.main.id
-    domains = join(" ", values(local.domains))
-    email   = var.letsencrypt_email
-    staging = var.letsencrypt_staging
+    args    = "${var.letsencrypt_email} ${var.letsencrypt_staging} ${join(" ", values(local.domains))}"
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/run-on-instance.sh ${aws_instance.main.id} ${var.region} cms-https"
+    command     = "${path.module}/run-on-instance.sh ${aws_instance.main.id} ${var.region} cms-https ${self.triggers_replace.args}"
     environment = local.aws_cli_env
   }
 
