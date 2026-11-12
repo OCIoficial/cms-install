@@ -1,9 +1,8 @@
 # Funciones comunes para los scripts de despliegue. Se incluye con `source`.
 #
 # /etc/cms/deploy.env lo escribe el user_data de Terraform al crear la instancia
-# (ROLE, AWS_REGION, ASSETS_BUCKET, CMS_REF, MAIN_IP, VPC_CIDR,
-# WORKER_SSH_PUBKEY). Lo que puede cambiar después vive en S3 (config/) y se
-# baja con cms-sync-config.
+# (ROLE, AWS_REGION, ASSETS_BUCKET, CMS_REF, MAIN_IP, VPC_CIDR). Lo que puede
+# cambiar después vive en S3 (config/) y se baja con cms-sync-config.
 
 set -a
 # shellcheck disable=SC1091

@@ -63,7 +63,6 @@ resource "aws_s3_object" "secrets" {
   for_each = {
     "secrets/db_password"    = random_password.db.result
     "secrets/admin_password" = random_password.admin.result
-    "secrets/worker_ssh_key" = tls_private_key.workers.private_key_openssh
     "secrets/cloudflare.ini" = "dns_cloudflare_api_token = ${var.cloudflare_certbot_token}\n"
   }
   bucket  = aws_s3_bucket.assets.id

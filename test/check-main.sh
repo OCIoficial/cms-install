@@ -35,8 +35,12 @@ services=(ScoringService Checker EvaluationService ContestWebServer AdminWebServ
 for svc in "${services[@]}"; do
   check "cms$svc" wait_for 90 pgrep -f "cms$svc"
 done
+if [[ $MODE == contest ]]; then
+  check "la principal no ejecuta un Worker" wait_for 60 bash -c '! pgrep -f "[c]msWorker"'
+fi
 
 echo "-- Base de datos"
+check "PostgreSQL escucha en la IP privada" bash -c "ss -Hltn | grep -qF '10.20.1.10:5432'"
 check "administrador 'admin' creado" \
   bash -c "sudo -u postgres psql -d cmsdb -tAc \"SELECT 1 FROM admins WHERE username='admin'\" | grep -q 1"
 

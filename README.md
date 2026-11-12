@@ -6,7 +6,7 @@ Despliegue de [CMS](https://github.com/cms-dev/cms) para la OCI en AWS con Terra
 
 ### Primera vez
 
-1. Instalar [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.10 y AWS CLI v2 (en Arch: `pacman -S terraform aws-cli-v2`).
+1. Instalar [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.10, AWS CLI v2 y jq (en Arch: `pacman -S terraform aws-cli-v2 jq`).
 2. Configurar las [credenciales](#credenciales) y crear `terraform/secrets.auto.tfvars`.
 3. Si tu llave pública SSH no es `~/.ssh/id_ed25519.pub`, definir `ssh_public_key_path` en `terraform/terraform.tfvars`.
 4. Crear todo:
@@ -122,14 +122,14 @@ Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
 - **Primer arranque.** Cada máquina baja `scripts/` desde S3 y ejecuta `setup-main.sh` o `setup-worker.sh`: dependencias, isolate, CMS en `/home/ubuntu/cms` y servicios systemd. En la principal también PostgreSQL, el administrador y nginx. Si la máquina se apaga a medias, la instalación sigue en el próximo arranque. Log: `/var/log/cloud-init-output.log`.
 - **HTTPS.** Al final del `apply`, Terraform ejecuta `cms-https` en la principal: certificado de Let's Encrypt con verificación DNS en Cloudflare. Queda fuera del primer arranque para que un error de certbot se pueda reintentar con otro `apply`.
 - **Servicios** (systemd): `cms-log` y `cms-ranking` en la principal, y `cms-resource` en todas las máquinas. Este último levanta los servicios de CMS que le corresponden a cada máquina según su IP.
-- **Acceso.** SSH a la principal con tu llave (`ssh_public_key_path`) o por SSM (`terraform output ssm_main`). Desde la principal, `ssh worker-1`, `ssh worker-2`.
+- **Acceso.** SSH a la principal con tu llave (`ssh_public_key_path`) o por SSM (`terraform output ssm_main`). A los workers, pasando por la principal: `ssh -J ubuntu@<ip> ubuntu@10.20.1.11` (el comando de cada uno está en `terraform output workers`).
 
 ### Comandos en la principal
 
 | Comando | Qué hace |
 |---|---|
-| `sudo cms-contest <id\|ALL>` | Baja la configuración, asocia CMS al concurso y reinicia CMS en todas las máquinas. Terraform lo ejecuta solo al cambiar `contest_id` o la configuración. |
-| `sudo cms-update-scripts` | Baja `scripts/` desde S3 e instala comandos y servicios. Corre solo al arrancar, antes de cada comando de Terraform y en los workers con `cms-contest`. |
+| `sudo cms-contest <id\|ALL>` | Baja la configuración, asocia CMS al concurso y reinicia CMS en la principal. Terraform lo ejecuta solo al cambiar `contest_id` o la configuración, y después reinicia CMS en los workers encendidos (por SSM). |
+| `sudo cms-update-scripts` | Baja `scripts/` desde S3 e instala comandos y servicios. Corre solo al arrancar y antes de cada comando que Terraform ejecuta en una máquina. |
 | `sudo cms-ranking-reset` | Borra los datos del ranking y los vuelve a cargar desde CMS. |
 | `sudo cms-https` | Obtiene o cambia el certificado HTTPS. Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios o `letsencrypt_staging`. |
 | `cms-backup` | Exporta los concursos a `~/cms-backups/`. Bajarlos con `scp` antes de `terraform destroy`. |

@@ -27,24 +27,4 @@ fetch cms.toml
 if [[ $ROLE == main ]]; then
   fetch cms_ranking.toml
   fetch cluster.env
-  # shellcheck disable=SC1091
-  . "$ETC/cluster.env"
-
-  # Alias SSH a los workers: ssh worker-1, ssh worker-2, ...
-  SSH_DIR=/home/ubuntu/.ssh
-  mkdir -p "$SSH_DIR"
-  {
-    i=1
-    for ip in $WORKER_IPS; do
-      printf 'Host worker-%d\n  HostName %s\n\n' "$i" "$ip"
-      i=$((i + 1))
-    done
-    # Las IPs de los workers se reutilizan al recrearlos, por eso no se fija la host key
-    printf 'Host worker-*\n  User ubuntu\n  IdentityFile ~/.ssh/id_cms_workers\n'
-    printf '  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  LogLevel ERROR\n'
-  } > "$SSH_DIR/cms_workers"
-  touch "$SSH_DIR/config"
-  if ! grep -qxF 'Include ~/.ssh/cms_workers' "$SSH_DIR/config"; then
-    printf 'Include ~/.ssh/cms_workers\n\n%s' "$(cat "$SSH_DIR/config")" > "$SSH_DIR/config"
-  fi
 fi

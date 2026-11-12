@@ -3,8 +3,8 @@
 #
 # Asocia CMS a un concurso (necesario para que corra el ProxyService y se
 # actualice el ranking) o vuelve a modo ALL. Además baja la configuración más
-# reciente de S3 y reinicia CMS en la principal y en los workers encendidos. A
-# los workers también les actualiza los scripts (cms-update-scripts).
+# reciente de S3 y reinicia CMS en la principal. Los workers los reinicia
+# Terraform después (commands.tf); a mano: sudo systemctl restart cms-resource.
 
 set -euo pipefail
 . /opt/cms-deploy/lib.sh
@@ -31,17 +31,4 @@ fi
 echo "CONTEST=$1" > /etc/cms/contest
 /usr/local/bin/cms-sync-config
 systemctl restart cms-resource.service
-echo "principal: CMS reiniciado con contest=$1"
-
-# shellcheck disable=SC1091
-. "$CMS_HOME/etc/cluster.env"
-i=1
-for _ in $WORKER_IPS; do
-  if as_ubuntu ssh -o ConnectTimeout=5 "worker-$i" \
-    'sudo cms-update-scripts && sudo systemctl restart cms-resource.service'; then
-    echo "worker-$i: scripts actualizados y CMS reiniciado"
-  else
-    echo "worker-$i: no responde (¿está apagado?)"
-  fi
-  i=$((i + 1))
-done
+echo "CMS reiniciado con contest=$1"

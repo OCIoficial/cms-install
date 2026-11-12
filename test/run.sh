@@ -59,10 +59,21 @@ worker_state() {
   fi
 }
 
-# run_on_main <comando...>: lo que hace terraform/run-on-main.sh vía SSM
-run_on_main() {
-  incus exec "$MAIN" -- bash -c \
+# run_on <vm> <comando...>: lo que hace terraform/run-on-instance.sh vía SSM
+run_on() {
+  local vm=$1
+  shift
+  incus exec "$vm" -- bash -c \
     "{ cloud-init status --wait >/dev/null || test \$? -eq 2; } && /usr/local/bin/cms-update-scripts && $*"
+}
+
+# contest <id>: los comandos de commands.tf (cms_contest y, si el worker está
+# encendido, cms_worker_restart)
+contest() {
+  run_on "$MAIN" cms-contest "$1"
+  if [[ $(cat "$WORK/workers_running") == true ]]; then
+    run_on "$WORKER" systemctl restart cms-resource.service
+  fi
 }
 
 checks() {
@@ -71,10 +82,17 @@ checks() {
   # Se copian a la VM y se ejecutan desde un archivo: si el texto del script
   # quedara en la línea de comandos, `pgrep -f` lo encontraría a sí mismo
   cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-main.sh" | incus exec "$MAIN" -- sh -c 'cat > /root/check-main.sh'
-  cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-worker.sh" | incus exec "$MAIN" -- sh -c 'cat > /root/check-worker.sh'
   incus exec "$MAIN" -- bash /root/check-main.sh "$mode" "$(find "$ROOT/ranking/flags" -name '*.png' | wc -l)" || status=1
   if [[ $mode == contest ]]; then
-    incus exec "$MAIN" -- bash /root/check-worker.sh || status=1
+    cat "$ROOT/test/lib-check.sh" "$ROOT/test/check-worker.sh" | incus exec "$WORKER" -- sh -c 'cat > /root/check-worker.sh'
+    incus exec "$WORKER" -- bash /root/check-worker.sh || status=1
+    if diff <(incus exec "$MAIN" -- cat /home/ubuntu/cms/etc/cms.toml) \
+      <(incus exec "$WORKER" -- cat /home/ubuntu/cms/etc/cms.toml) >/dev/null; then
+      echo "  OK    el worker tiene el mismo cms.toml que la principal"
+    else
+      echo "  FALLA el worker tiene el mismo cms.toml que la principal"
+      status=1
+    fi
   fi
   return $status
 }
@@ -172,7 +190,7 @@ echo "$MARK" >> "$WORK/scripts/systemd/cms-log.service"
 rm "$WORK/scripts/obsoleto.txt"
 apply true
 worker_state running
-run_on_main cms-contest ALL
+contest ALL
 checks || status=1
 echo "-- Scripts actualizados en máquinas existentes"
 for vm in "$MAIN" "$WORKER"; do
@@ -195,7 +213,7 @@ YAML
 incus exec "$MAIN" -- sudo -u ubuntu -H /home/ubuntu/cms/bin/cmsImportContest -L italy_yaml /tmp/prueba
 CONTEST_ID=$(incus exec "$MAIN" -- sudo -u postgres psql -d cmsdb -tAc "SELECT id FROM contests WHERE name = 'prueba'")
 echo "Concurso creado: $CONTEST_ID"
-run_on_main cms-contest "$CONTEST_ID"
+contest "$CONTEST_ID"
 checks || status=1
 result "contest_id inexistente se rechaza sin tocar CMS" \
   bash -c "! incus exec $MAIN -- cms-contest 9999 && incus exec $MAIN -- grep -qx CONTEST=$CONTEST_ID /etc/cms/contest"
@@ -204,14 +222,14 @@ echo
 echo "== Vuelta a modo preparación"
 apply false
 worker_state stopped
-run_on_main cms-contest "$CONTEST_ID"
+contest "$CONTEST_ID"
 checks || status=1
 
 echo
 echo "== De nuevo modo competencia (worker ya instalado)"
 apply true
 worker_state running
-run_on_main cms-contest "$CONTEST_ID"
+contest "$CONTEST_ID"
 checks || status=1
 
 echo

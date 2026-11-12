@@ -22,9 +22,6 @@ wait_for() {
   return 1
 }
 
-# Comando en el worker, vía SSH desde la principal (como ubuntu)
-on_worker() { sudo -u ubuntu ssh -o ConnectTimeout=5 worker-1 "$@"; }
-
 summary() {
   echo
   if [[ $FAILED -eq 0 ]]; then

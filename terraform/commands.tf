@@ -1,18 +1,16 @@
-# Comandos que Terraform ejecuta en la principal (vía SSM) cuando cambia algo,
-# para que no haya que entrar a la máquina. Un `terraform apply` sin cambios
-# no ejecuta nada.
+# Comandos que Terraform ejecuta en las máquinas (vía SSM) cuando cambia algo,
+# para que no haya que entrar a ellas. Un `terraform apply` sin cambios no
+# ejecuta nada.
 
 locals {
-  # run-on-main.sh usa la AWS CLI con el mismo perfil que Terraform
+  # run-on-instance.sh usa la AWS CLI con el mismo perfil que Terraform
   aws_cli_env = var.aws_profile == null ? {} : { AWS_PROFILE = var.aws_profile }
 }
 
-# Asocia CMS al concurso y reinicia CMS en todas las máquinas encendidas, después
-# de actualizar sus scripts. Corre cuando cambia contest_id, la configuración de
-# CMS (p. ej. workers_running), algún archivo de scripts/ o se recrea la principal.
+# Asocia CMS al concurso y reinicia CMS en la principal, después de actualizar
+# sus scripts. Corre cuando cambia contest_id, la configuración de CMS (p. ej.
+# workers_running), algún archivo de scripts/ o se recrea la principal.
 resource "terraform_data" "cms_contest" {
-  count = var.main_running ? 1 : 0
-
   triggers_replace = {
     main_id    = aws_instance.main.id
     contest_id = var.contest_id
@@ -21,19 +19,35 @@ resource "terraform_data" "cms_contest" {
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/run-on-main.sh ${aws_instance.main.id} ${var.region} cms-contest ${var.contest_id}"
+    command     = "${path.module}/run-on-instance.sh ${aws_instance.main.id} ${var.region} cms-contest ${var.contest_id}"
     environment = local.aws_cli_env
   }
 
-  # La config y los scripts nuevos tienen que estar en S3 y los workers encendidos antes de reiniciar
-  depends_on = [aws_s3_object.config, aws_s3_object.scripts, aws_ec2_instance_state.main, aws_ec2_instance_state.worker]
+  # La config y los scripts nuevos tienen que estar en S3 antes de reiniciar
+  depends_on = [aws_s3_object.config, aws_s3_object.scripts]
+}
+
+# Actualiza los scripts y reinicia CMS en cada worker encendido, después de la
+# principal. Corre cada vez que corre cms_contest o se recrea el worker.
+resource "terraform_data" "cms_worker_restart" {
+  count = var.workers_running ? var.worker_count : 0
+
+  triggers_replace = {
+    cms_contest = terraform_data.cms_contest.id
+    worker_id   = aws_instance.worker[count.index].id
+  }
+
+  provisioner "local-exec" {
+    command     = "${path.module}/run-on-instance.sh ${aws_instance.worker[count.index].id} ${var.region} systemctl restart cms-resource.service"
+    environment = local.aws_cli_env
+  }
+
+  depends_on = [aws_ec2_instance_state.worker]
 }
 
 # Obtiene o cambia el certificado HTTPS. Corre cuando cambian los dominios, el modo
 # staging o se recrea la principal (el primer arranque no pide certificado).
 resource "terraform_data" "cms_https" {
-  count = var.main_running ? 1 : 0
-
   triggers_replace = {
     main_id = aws_instance.main.id
     domains = join(" ", values(local.domains))
@@ -42,9 +56,9 @@ resource "terraform_data" "cms_https" {
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/run-on-main.sh ${aws_instance.main.id} ${var.region} cms-https"
+    command     = "${path.module}/run-on-instance.sh ${aws_instance.main.id} ${var.region} cms-https"
     environment = local.aws_cli_env
   }
 
-  depends_on = [aws_s3_object.config, aws_ec2_instance_state.main, cloudflare_dns_record.cms]
+  depends_on = [aws_s3_object.config, cloudflare_dns_record.cms]
 }

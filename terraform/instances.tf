@@ -16,43 +16,38 @@ resource "aws_key_pair" "admin" {
 locals {
   user_data = {
     for role in ["main", "worker"] : role => templatefile("${path.module}/templates/user-data.sh.tftpl", {
-      role              = role
-      region            = var.region
-      assets_bucket     = aws_s3_bucket.assets.id
-      cms_ref           = var.cms_ref
-      main_ip           = local.main_ip
-      vpc_cidr          = var.vpc_cidr
-      worker_ssh_pubkey = trimspace(tls_private_key.workers.public_key_openssh)
-      aws_cli_key       = trimspace(file("${path.module}/aws-cli.asc"))
+      role          = role
+      region        = var.region
+      assets_bucket = aws_s3_bucket.assets.id
+      cms_ref       = var.cms_ref
+      main_ip       = local.main_ip
+      vpc_cidr      = local.vpc_cidr
+      aws_cli_key   = trimspace(file("${path.module}/aws-cli.asc"))
     })
   }
-
-  # El user_data y la AMI solo se usan al crear la instancia. Cambiarlos después
-  # no debe reiniciar ni recrear máquinas (para eso: terraform apply -replace=...).
-  instance_common = {
-    subnet_id = aws_subnet.cms.id
-    ami       = data.aws_ami.ubuntu.id
-    key_name  = aws_key_pair.admin.key_name
-  }
 }
+
+# El user_data, la AMI y la llave solo se usan al crear una instancia, por eso
+# ignore_changes: cambiarlos después no debe recrear máquinas (para eso:
+# terraform apply -replace=...).
 
 # ---------------------------------------------------------------------------
 # Máquina principal: Postgres, servicios de CMS, ranking, nginx
 # ---------------------------------------------------------------------------
 
 resource "aws_instance" "main" {
-  ami                    = local.instance_common.ami
+  ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.main_instance_type
-  subnet_id              = local.instance_common.subnet_id
+  subnet_id              = aws_subnet.cms.id
   private_ip             = local.main_ip
-  vpc_security_group_ids = [aws_security_group.main.id]
-  key_name               = local.instance_common.key_name
+  vpc_security_group_ids = [aws_security_group.main.id, aws_security_group.cluster.id]
+  key_name               = aws_key_pair.admin.key_name
   iam_instance_profile   = aws_iam_instance_profile.host["main"].name
   user_data              = local.user_data["main"]
 
   root_block_device {
     volume_type = "gp3"
-    volume_size = var.main_disk_gb
+    volume_size = 20
     encrypted   = true
   }
 
@@ -76,29 +71,24 @@ resource "aws_eip" "main" {
   tags     = { Name = "cms-main" }
 }
 
-resource "aws_ec2_instance_state" "main" {
-  instance_id = aws_instance.main.id
-  state       = var.main_running ? "running" : "stopped"
-}
-
 # ---------------------------------------------------------------------------
 # Workers: solo ejecutan soluciones. Se apagan cuando no hay competencia.
 # ---------------------------------------------------------------------------
 
 resource "aws_instance" "worker" {
   count                  = var.worker_count
-  ami                    = local.instance_common.ami
+  ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.worker_instance_type
-  subnet_id              = local.instance_common.subnet_id
+  subnet_id              = aws_subnet.cms.id
   private_ip             = local.worker_ips[count.index]
-  vpc_security_group_ids = [aws_security_group.worker.id]
-  key_name               = local.instance_common.key_name
+  vpc_security_group_ids = [aws_security_group.cluster.id]
+  key_name               = aws_key_pair.admin.key_name
   iam_instance_profile   = aws_iam_instance_profile.host["worker"].name
   user_data              = local.user_data["worker"]
 
   root_block_device {
     volume_type = "gp3"
-    volume_size = var.worker_disk_gb
+    volume_size = 12
     encrypted   = true
   }
 

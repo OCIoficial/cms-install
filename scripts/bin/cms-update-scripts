@@ -2,9 +2,9 @@
 # Baja desde S3 la última versión de los scripts de despliegue (scripts.zip, con
 # scripts/ del repo) e instala los comandos y servicios systemd. No reinicia CMS.
 #
-# Corre solo: en cada arranque, antes de cada comando que Terraform ejecuta en
-# la principal, y en los workers cuando cms-contest los reinicia. Así un
-# `terraform apply` con scripts cambiados llega a las máquinas que ya existen.
+# Corre solo: en cada arranque y antes de cada comando que Terraform ejecuta en
+# una máquina. Así un `terraform apply` con scripts cambiados llega a las
+# máquinas que ya existen.
 
 set -euo pipefail
 . /opt/cms-deploy/lib.sh

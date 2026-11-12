@@ -1,10 +1,10 @@
 #! /usr/bin/env bash
-# Uso: run-on-main.sh <instance_id> <region> <comando...>
+# Uso: run-on-instance.sh <instance_id> <region> <comando...>
 #
 # Lo llama Terraform (terraform_data en commands.tf). Ejecuta un comando como
-# root en la principal vía SSM, después de que termine su primer arranque y de
-# actualizar los scripts desde S3, y espera el resultado. Requiere la AWS CLI y
-# las credenciales de Terraform.
+# root en una máquina vía SSM, después de que termine su arranque y de
+# actualizar los scripts desde S3, y espera el resultado. Requiere la AWS CLI,
+# jq y las credenciales de Terraform.
 
 set -euo pipefail
 
@@ -14,8 +14,15 @@ shift 2
 
 ssm() { aws --region "$REGION" ssm "$@"; }
 
-# Primero esperar el primer arranque (1 = error; 2 = terminó con advertencias)
-PARAMS="{\"commands\":[\"cloud-init status --wait >/dev/null || test \$? -eq 2 || { echo El primer arranque falló, ver /var/log/cloud-init-output.log; exit 1; }\",\"/usr/local/bin/cms-update-scripts || exit 1\",\"$*\"],\"executionTimeout\":[\"3600\"]}"
+# Primero esperar el arranque (1 = error; 2 = terminó con advertencias)
+PARAMS=$(jq -nc --arg cmd "$*" '{
+  commands: [
+    "cloud-init status --wait >/dev/null || test $? -eq 2 || { echo El arranque falló, ver /var/log/cloud-init-output.log; exit 1; }",
+    "/usr/local/bin/cms-update-scripts || exit 1",
+    $cmd
+  ],
+  executionTimeout: ["3600"]
+}')
 
 # El agente de SSM tarda en registrarse después de que arranca la máquina
 for _ in $(seq 60); do
@@ -30,7 +37,7 @@ if [[ -z ${CID:-} ]]; then
   exit 1
 fi
 
-echo "Ejecutando en la principal: $* (espera a que termine el primer arranque)"
+echo "Ejecutando en $ID: $* (espera a que termine el arranque)"
 while true; do
   STATUS=$(ssm get-command-invocation --command-id "$CID" --instance-id "$ID" \
     --query Status --output text 2>/dev/null || echo Pending)

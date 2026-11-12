@@ -22,22 +22,15 @@ if [[ ! -f /var/lib/cms-deploy/db-initialized ]]; then
   as_ubuntu "$CMS_BIN/cmsInitDB"
   touch /var/lib/cms-deploy/db-initialized
 fi
-. "$CMS_HOME/etc/cluster.env"
-if [[ -z $(sudo -u postgres psql -d cmsdb -tAc "SELECT 1 FROM admins WHERE username = '$ADMIN_USERNAME'") ]]; then
+if [[ -z $(sudo -u postgres psql -d cmsdb -tAc "SELECT 1 FROM admins WHERE username = 'admin'") ]]; then
   set +x
-  as_ubuntu "$CMS_BIN/cmsAddAdmin" "$ADMIN_USERNAME" -p "$(s3_get secrets/admin_password -)"
+  as_ubuntu "$CMS_BIN/cmsAddAdmin" admin -p "$(s3_get secrets/admin_password -)"
   set -x
 fi
 
 # Imágenes del ranking (logo y banderas)
 s3_unzip ranking.zip "$CMS_HOME/lib/ranking"
 chown -R ubuntu:ubuntu "$CMS_HOME/lib/ranking"
-
-# Llave SSH para conectarse a los workers (ssh worker-1, ssh worker-2, ...)
-install -d -m 700 -o ubuntu -g ubuntu /home/ubuntu/.ssh
-set +x
-s3_get secrets/worker_ssh_key - | install -m 600 -o ubuntu -g ubuntu /dev/stdin /home/ubuntu/.ssh/id_cms_workers
-set -x
 
 # Servicios de CMS
 systemctl enable --now cms-log.service cms-resource.service cms-ranking.service

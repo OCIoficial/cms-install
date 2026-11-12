@@ -18,12 +18,6 @@ variable "contest_id" {
   }
 }
 
-variable "main_running" {
-  description = "false apaga la máquina principal (se conservan disco y datos)."
-  type        = bool
-  default     = true
-}
-
 variable "worker_count" {
   description = "Cantidad de máquinas worker."
   type        = number
@@ -33,12 +27,6 @@ variable "worker_count" {
     condition     = var.worker_count >= 0 && var.worker_count <= 50
     error_message = "worker_count debe estar entre 0 y 50."
   }
-}
-
-variable "main_workers" {
-  description = "Workers de CMS en la máquina principal. null = automático (0 si workers_running, 1 si no)."
-  type        = number
-  default     = null
 }
 
 variable "cms_ref" {
@@ -140,30 +128,4 @@ variable "main_instance_type" {
 variable "worker_instance_type" {
   type    = string
   default = "c7i.large"
-}
-
-variable "main_disk_gb" {
-  type    = number
-  default = 20
-}
-
-variable "worker_disk_gb" {
-  type    = number
-  default = 12
-}
-
-variable "vpc_cidr" {
-  type    = string
-  default = "10.20.0.0/16"
-}
-
-variable "subnet_cidr" {
-  type    = string
-  default = "10.20.1.0/24"
-}
-
-variable "admin_username" {
-  description = "Usuario del AdminWebServer que se crea al inicio."
-  type        = string
-  default     = "admin"
 }
