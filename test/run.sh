@@ -15,7 +15,7 @@
 #   test/run.sh shell [worker]   consola en la principal (o en el worker)
 #   test/run.sh clean            borra VMs, red, moto y archivos temporales
 #
-# Requiere: incus (con KVM), terraform, aws (CLI v2), uv.
+# Requiere: incus (con KVM), terraform, aws (CLI v2), uv, node y npm.
 
 set -euo pipefail
 
@@ -39,7 +39,7 @@ tf_args() {
   echo -var workers_running="$1" -var worker_count=1 -var domain=test -var cloudflare_certbot_token=test \
     -var letsencrypt_email=test@example.com -var cloudflare_zone_id=00000000000000000000000000000000 \
     -target=aws_s3_object.scripts -target=aws_s3_object.ranking \
-    -target=aws_s3_object.config -target=aws_s3_object.secrets
+    -target=aws_s3_object.config -target=aws_s3_object.secrets -target=aws_s3_object.import_users
 }
 
 # apply <workers_running>: sube a moto lo que en AWS sube Terraform
@@ -149,6 +149,8 @@ until curl -s -o /dev/null "$MOTO"; do sleep 1; done
 
 # Terraform real sobre una copia del repo, con el proveedor apuntando a moto
 cp -r "$ROOT/terraform" "$ROOT/scripts" "$ROOT/ranking" "$WORK/"
+# El importador, sin node_modules (build.sh hace npm ci)
+tar -C "$ROOT" --exclude=node_modules --exclude=dist -c import-users | tar -C "$WORK" -x
 # Sin el estado ni los tokens reales
 rm -f "$WORK/terraform/terraform.tfstate"* "$WORK/terraform/secrets.auto.tfvars"
 cp "$ROOT"/test/terraform/*.tf "$WORK/terraform/"
@@ -178,6 +180,8 @@ echo "Apagando $WORKER a mitad de la instalación"
 # Forzado: durante la instalación la VM no atiende el apagado ordenado a tiempo
 incus stop -f "$WORKER"
 wait_boot "$MAIN"
+# Lo que hace terraform_data.import_users al crear la principal
+run_on "$MAIN" cms-import-users-update
 checks || status=1
 result "$MAIN: scripts/obsoleto.txt instalado (se borra más adelante)" \
   incus exec "$MAIN" -- test -f /opt/cms-deploy/obsoleto.txt
@@ -245,6 +249,7 @@ cat <<EOF
 Para ver la web, agrega a /etc/hosts:
   10.20.1.10 cms.test cms-admin.test ranking.test
 y abre http://cms-admin.test (usuario admin, contraseña: $(tf output -raw admin_password)).
+El importador de usuarios está en http://cms-admin.test/import-users/.
 
 Consola: $0 shell [worker]    Borrar todo: $0 clean
 EOF

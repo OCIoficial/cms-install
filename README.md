@@ -6,7 +6,7 @@ Despliegue de [CMS](https://github.com/cms-dev/cms) para la OCI en AWS con Terra
 
 ### Primera vez
 
-1. Instalar [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.10, AWS CLI v2 y jq (en Arch: `pacman -S terraform aws-cli-v2 jq`).
+1. Instalar [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.10, AWS CLI v2, jq y Node.js con npm (en Arch: `pacman -S terraform aws-cli-v2 jq nodejs npm`). Node se usa para compilar el [importador de usuarios](#importar-usuarios) en cada `terraform plan`/`apply`.
 2. Configurar las [credenciales](#credenciales) y crear `terraform/secrets.auto.tfvars`.
 3. Si tu llave pública SSH no es `~/.ssh/id_ed25519.pub`, definir `ssh_public_key_path` en `terraform/terraform.tfvars`.
 4. Crear todo:
@@ -47,6 +47,26 @@ terraform output -raw admin_password   # contraseña del usuario admin
 ```
 
 Para agregar más administradores (mejor uno por persona): desde la sección **Admins** del panel, o en la principal con `~/cms/bin/cmsAddAdmin <usuario> -p <contraseña>`.
+
+## Importar usuarios
+
+En `https://<admin>/import-users/` (el mismo dominio del panel de administración) hay una página para crear usuarios en lote y asociarlos a un concurso con su región. Usa la sesión del panel: hay que entrar primero al panel con un administrador que tenga todos los permisos.
+
+1. En Google Sheets, seleccionar las celdas (con o sin la fila de títulos), `Ctrl+C`, y `Ctrl+V` en la página.
+2. Arrastrar cada columna al campo que corresponde: *Username*, *First name*, *Last name*, *Password*, *Email* y *Region*. Las columnas sin asignar se ignoran. Si la primera fila son títulos, marcar *First row is a header*.
+3. Elegir el concurso, o ninguno para solo crear usuarios.
+4. Revisar la vista previa. Los errores se corrigen en la planilla y se vuelve a pegar (las columnas asignadas se mantienen). *Import* escribe todo en una sola transacción: si una fila tiene error, no se importa nada.
+
+Reglas:
+
+- **Usuario nuevo:** necesita nombre, apellido y contraseña. Las contraseñas no se generan: vienen en la planilla y quedan en texto plano (visibles en el panel). Nombres y apellidos se normalizan (espacios y mayúscula inicial: `"  MARÍA  JOSÉ "` → `María José`). El username se usa tal cual y solo puede tener letras, dígitos, `_` y `-`.
+- **Usuario que ya existe:** no se modifica. Si la fila trae nombre, apellido, contraseña o correo, deben coincidir con los de CMS; si no, es un error. Así las mismas filas sirven para agregar a otro concurso a usuarios ya creados.
+- **Región:** el equipo del usuario en el concurso, que el ranking muestra con su bandera. Acepta el código (`biobio`), el nombre (`Biobío`, `Región del Biobío`) o una ciudad (`Concepción`), sin importar tildes ni mayúsculas. Las regiones están en `import-users/data/teams.csv` (con los mismos códigos que `ranking/flags/`) y las ciudades en `import-users/data/cities.csv`; para agregar una ciudad, editar ese archivo y hacer `terraform apply`. Una región vacía deja al usuario sin equipo. Sin concurso, la región se ignora.
+- **Ya está en el concurso:** se actualiza su región.
+
+Si CMS está asociado al concurso (`contest_id`), el ranking se actualiza al importar.
+
+El código está en `import-users/`: el backend en Python (`server/`, corre con el Python de CMS en el servicio `cms-import-users`) y el frontend en Svelte (`frontend/`). Terraform ejecuta `import-users/build.sh` en cada plan, que compila el frontend (con `npm ci` si cambiaron las dependencias), y sube el resultado a S3 como `import-users.zip`. Cuando cambia, el `apply` lo instala en la principal con `cms-import-users-update`, sin reiniciar CMS. Pruebas: `python3 import-users/server/test_rules.py` y, en `import-users/frontend/`, `npm test` y `npm run check`.
 
 ## Credenciales
 
@@ -121,7 +141,7 @@ Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
 - **Configuración.** Terraform genera `cms.toml` y lo sube a S3. Cada máquina lo baja al iniciar los servicios de CMS (`cms-sync-config`), así que cambiar la configuración no recrea máquinas.
 - **Primer arranque.** Cada máquina baja `scripts/` desde S3 y ejecuta `setup-main.sh` o `setup-worker.sh`: dependencias, isolate, CMS en `/home/ubuntu/cms` y servicios systemd. En la principal también PostgreSQL, el administrador y nginx. Si la máquina se apaga a medias, la instalación sigue en el próximo arranque. Log: `/var/log/cloud-init-output.log`.
 - **HTTPS.** Al final del `apply`, Terraform ejecuta `cms-https` en la principal: certificado de Let's Encrypt con verificación DNS en Cloudflare. Queda fuera del primer arranque para que un error de certbot se pueda reintentar con otro `apply`.
-- **Servicios** (systemd): `cms-log` y `cms-ranking` en la principal, y `cms-resource` en todas las máquinas. Este último levanta los servicios de CMS que le corresponden a cada máquina según su IP.
+- **Servicios** (systemd): `cms-log`, `cms-ranking` y `cms-import-users` en la principal, y `cms-resource` en todas las máquinas. Este último levanta los servicios de CMS que le corresponden a cada máquina según su IP.
 - **Acceso.** SSH a la principal con tu llave (`ssh_public_key_path`) o por SSM (`terraform output ssm_main`). A los workers, pasando por la principal: `ssh -J ubuntu@<ip> ubuntu@10.20.1.11` (el comando de cada uno está en `terraform output workers`).
 
 ### Comandos en la principal
@@ -133,11 +153,12 @@ Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
 | `sudo cms-ranking-reset` | Borra los datos del ranking y los vuelve a cargar desde CMS. |
 | `sudo cms-https <correo> <true\|false> <dominio>...` | Obtiene o cambia el certificado HTTPS (`true`: certificado de prueba). Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios, el correo o `letsencrypt_staging`. |
 | `cms-backup` | Exporta los concursos a `~/cms-backups/`. Bajarlos con `scp` antes de `terraform destroy`. |
+| `sudo cms-import-users-update` | Baja el [importador de usuarios](#importar-usuarios) desde S3 y lo reinicia. Terraform lo ejecuta cuando cambia `import-users/` o se recrea la principal. |
 | `journalctl -u cms-resource -f` | Logs de CMS. Los logs detallados están en `~/cms/log/`. |
 
 ## Prueba local
 
-`test/run.sh` prueba el despliegue sin AWS, en VMs de Incus con las mismas IPs y el mismo `user_data` que en EC2. Terraform real genera la configuración contra [moto](https://github.com/getmoto/moto), que simula S3. Prueba la principal y un worker en los cambios de un despliegue real: worker creado apagado con la instalación a medias, cambio de `scripts/`, preparación ↔ competencia, un `contest_id` específico y un `apply` sin cambios. Encender y apagar el worker y los comandos que Terraform ejecuta por SSM se imitan con incus. No prueba IAM, security groups, SSM ni HTTPS. Requiere `incus`, `terraform`, `aws` y `uv`. `test/run.sh clean` borra todo.
+`test/run.sh` prueba el despliegue sin AWS, en VMs de Incus con las mismas IPs y el mismo `user_data` que en EC2. Terraform real genera la configuración contra [moto](https://github.com/getmoto/moto), que simula S3. Prueba la principal y un worker en los cambios de un despliegue real: worker creado apagado con la instalación a medias, cambio de `scripts/`, preparación ↔ competencia, un `contest_id` específico y un `apply` sin cambios. Encender y apagar el worker y los comandos que Terraform ejecuta por SSM se imitan con incus. También prueba el importador de usuarios: entra al panel con curl, importa un usuario al concurso y revisa la base de datos y el ranking. No prueba IAM, security groups, SSM ni HTTPS. Requiere `incus`, `terraform`, `aws`, `uv`, `node` y `npm`. `test/run.sh clean` borra todo.
 
 ## Versión de CMS
 

@@ -1,0 +1,15 @@
+[Unit]
+Description=Importador de usuarios de CMS (/import-users en el dominio del admin)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/cms-import-users
+ExecStartPre=/usr/local/bin/cms-sync-config
+ExecStart=/home/ubuntu/cms/bin/python /opt/cms-import-users/app.py --port 8891
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

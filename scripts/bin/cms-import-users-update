@@ -1,0 +1,30 @@
+#! /usr/bin/bash
+# Uso (en la principal): cms-import-users-update
+#
+# Baja import-users.zip desde S3 (el importador de usuarios, que arma
+# Terraform) a /opt/cms-import-users y reinicia su servicio. No reinicia CMS.
+# Lo ejecuta Terraform (commands.tf) cuando cambia el importador o se recrea la
+# principal.
+
+set -euo pipefail
+. /opt/cms-deploy/lib.sh
+
+if [[ $ROLE != main ]]; then
+  echo "cms-import-users-update se corre en la máquina principal" >&2
+  exit 1
+fi
+require_root "$@"
+
+DIR=/opt/cms-import-users
+# Se extrae aparte y se reemplaza la carpeta entera, como en cms-update-scripts
+NEW=$(mktemp -d "$DIR.new.XXXXXX")
+s3_unzip import-users.zip "$NEW"
+chmod -R a+rX "$NEW"
+OLD=$(mktemp -u "$DIR.old.XXXXXX")
+if [[ -d $DIR ]]; then mv "$DIR" "$OLD"; fi
+mv "$NEW" "$DIR"
+rm -rf "$OLD"
+
+systemctl enable cms-import-users.service
+systemctl restart cms-import-users.service
+echo "Importador de usuarios actualizado"

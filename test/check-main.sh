@@ -50,6 +50,88 @@ check "AdminWebServer (cms-admin.test)" wait_for 30 http_ok cms-admin.test
 check "Ranking (ranking.test)" wait_for 30 http_ok ranking.test
 check "logo y $FLAGS banderas del ranking, de ubuntu" ranking_images
 
+echo "-- Importador de usuarios (/import-users)"
+# curl con sesión del panel de administración (cookie awslogin)
+JAR=$(mktemp)
+ADMIN=(-s --resolve cms-admin.test:80:127.0.0.1 -b "$JAR" -c "$JAR")
+API=http://cms-admin.test/import-users/api
+
+admin_login() {
+  local password xsrf
+  password=$(. /opt/cms-deploy/lib.sh && s3_get secrets/admin_password -)
+  curl "${ADMIN[@]}" -o /dev/null http://cms-admin.test/login
+  xsrf=$(awk '$6 == "_xsrf" {print $7}' "$JAR")
+  curl "${ADMIN[@]}" -o /dev/null --data-urlencode "_xsrf=$xsrf" --data-urlencode username=admin \
+    --data-urlencode "password=$password" --data-urlencode next=/ http://cms-admin.test/login
+}
+
+redirects_to_login() {
+  [[ $(curl -s --resolve cms-admin.test:80:127.0.0.1 -o /dev/null -w '%{http_code} %{redirect_url}' \
+    http://cms-admin.test/import-users/) =~ ^302\ .*/login\?next=/import-users/$ ]]
+}
+
+page_and_assets() { # la página y los JS/CSS que referencia
+  local html asset
+  html=$(curl "${ADMIN[@]}" -f http://cms-admin.test/import-users/) || return 1
+  for asset in $(grep -o '/import-users/assets/[^"]*' <<<"$html"); do
+    curl "${ADMIN[@]}" -f -o /dev/null "http://cms-admin.test$asset" || return 1
+  done
+  grep -q /import-users/assets/ <<<"$html"
+}
+
+meta_ok() {
+  curl "${ADMIN[@]}" -f "$API/meta" | python3 -c \
+    'import json, sys; d = json.load(sys.stdin); assert d["admin"] == "admin" and len(d["teams"]) == 16'
+}
+
+import_post() { # import_post <ruta> <json>
+  curl "${ADMIN[@]}" -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+    -H 'X-Requested-With: cms-import-users' -d "$2" "$API/$1"
+}
+
+IMPORT_BODY='{"contest_id": '"${CONTEST/ALL/null}"', "mapped": ["username", "first_name", "last_name", "password", "region"],
+  "rows": [{"username": "prueba-import", "first_name": "  ana  MARÍA", "last_name": "soto",
+            "password": "clave1", "region": "Concepción"}]}'
+
+imported_in_db() {
+  [[ $(sudo -u postgres psql -d cmsdb -tAc "SELECT u.first_name || '|' || t.code FROM participations p
+    JOIN users u ON u.id = p.user_id JOIN teams t ON t.id = p.team_id
+    WHERE u.username = 'prueba-import' AND p.contest_id = $CONTEST") == 'Ana María|biobio' ]]
+}
+
+csrf_rejected() {
+  [[ $(curl "${ADMIN[@]}" -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+    -d '{}' "$API/preview") == 403 ]]
+}
+
+import_ok() { [[ $(import_post import "$IMPORT_BODY") == 200 ]]; }
+
+other_password_rejected() {
+  local body=${IMPORT_BODY/clave1/otra}
+  [[ $(import_post preview "$body") == 200 && $(import_post import "$body") == 400 ]]
+}
+
+ranking_has_user() {
+  # El ProxyService codifica los ids para el ranking: "-" queda como "_2d"
+  curl -s -H 'Host: ranking.test' http://127.0.0.1/users/ | grep -q prueba_2dimport \
+    && curl -s -H 'Host: ranking.test' http://127.0.0.1/teams/ | grep -q biobio
+}
+
+check "cms-import-users activo" systemctl is-active --quiet cms-import-users
+check "sin sesión redirige al login del panel" wait_for 30 redirects_to_login
+admin_login
+check "con sesión de admin: página y assets" page_and_assets
+check "con sesión de admin: concursos y 16 regiones" meta_ok
+check "POST sin encabezado CSRF se rechaza" csrf_rejected
+if [[ $CONTEST != ALL ]]; then
+  # En otra pasada de checks el usuario ya existe con los mismos datos: no es error
+  check "importa un usuario con región (ciudad) al concurso" import_ok
+  check "usuario en la base de datos, normalizado y con equipo biobio" imported_in_db
+  check "el ranking recibe el usuario y su región" wait_for 30 ranking_has_user
+  check "un usuario existente con otra contraseña es un error" other_password_rejected
+fi
+rm -f "$JAR"
+
 echo "-- Sandbox (isolate como ubuntu)"
 check "isolate ejecuta un programa" sudo -u ubuntu bash -c \
   'isolate --cg -b 99 --cleanup; isolate --cg -b 99 --init && isolate --cg -b 99 --run -- /bin/true; r=$?; isolate --cg -b 99 --cleanup; exit $r'
