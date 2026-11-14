@@ -11,6 +11,10 @@ worker_count    = 2
 # del concurso (necesario para el ranking). Terraform reinicia CMS al cambiarlo.
 contest_id = "ALL"
 
+# false: el ranking pide usuario (oci) y contraseña (terraform output -raw ranking_password).
+# Cambiarlo recarga nginx, sin reiniciar CMS.
+# ranking_public = true
+
 # Commit de cms-dev/cms (rama main, 1.6.dev0). Solo afecta a máquinas nuevas.
 cms_ref = "bcf7a88f1d2ab35d9469dc7e2e185e1452d78e5e"
 

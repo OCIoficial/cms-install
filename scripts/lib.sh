@@ -26,6 +26,11 @@ s3_unzip() {
   rm -f "$zip"
 }
 
+# Usuario y contraseña de nginx para ver el ranking (ranking_public = false)
+install_ranking_htpasswd() {
+  s3_get secrets/ranking.htpasswd - | install -m 640 -o root -g www-data /dev/stdin /etc/nginx/ranking.htpasswd
+}
+
 as_ubuntu() { sudo -u ubuntu -H "$@"; }
 
 # Si se corre como root, vuelve a ejecutar el script como ubuntu

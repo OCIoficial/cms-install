@@ -8,11 +8,23 @@ MODE=$1
 FLAGS=$2
 RANKING=/home/ubuntu/cms/lib/ranking
 CONTEST=$(sed -n 's/^CONTEST=//p' /etc/cms/contest)
+# Usuario y contraseña para ver el ranking (ranking_public = false, el valor por defecto).
+# Siempre con ":": sin él, `curl -u` pide la contraseña por la terminal y la prueba se cuelga.
+RANKING_AUTH=$(sed -n 's/^\(oci\):{PLAIN}/\1:/p' /etc/nginx/ranking.htpasswd 2>/dev/null)
+RANKING_AUTH=${RANKING_AUTH:-oci:}
 
-http_ok() { # http_ok <host> -> 2xx/3xx a través de nginx
-  local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $1" http://127.0.0.1/)
-  [[ $code =~ ^[23] ]]
+http_code() { # http_code <host> [opciones de curl] -> código HTTP a través de nginx
+  local host=$1
+  shift
+  curl -s -o /dev/null -w '%{http_code}' -H "Host: $host" "$@" http://127.0.0.1/
+}
+
+http_ok() { # http_ok <host> [opciones de curl] -> 2xx/3xx
+  [[ $(http_code "$@") =~ ^[23] ]]
+}
+
+http_unauthorized() { # http_unauthorized <host> [opciones de curl] -> 401
+  [[ $(http_code "$@") == 401 ]]
 }
 
 ranking_images() { # logo y todas las banderas del zip, de ubuntu (el ranking escribe ahí)
@@ -47,7 +59,11 @@ check "administrador 'admin' creado" \
 echo "-- Web (nginx)"
 check "ContestWebServer (cms.test)" wait_for 30 http_ok cms.test
 check "AdminWebServer (cms-admin.test)" wait_for 30 http_ok cms-admin.test
-check "Ranking (ranking.test)" wait_for 30 http_ok ranking.test
+check "Ranking (ranking.test) con usuario y contraseña" wait_for 30 http_ok ranking.test -u "$RANKING_AUTH"
+check "Ranking sin contraseña: 401" http_unauthorized ranking.test
+check "Ranking con otra contraseña: 401" http_unauthorized ranking.test -u oci:otra
+check "contraseñas del ranking legibles solo por root y nginx" \
+  bash -c "[[ \$(stat -c '%U:%G %a' /etc/nginx/ranking.htpasswd) == 'root:www-data 640' ]]"
 check "logo y $FLAGS banderas del ranking, de ubuntu" ranking_images
 
 echo "-- Importador de usuarios (/import-users)"
@@ -113,8 +129,8 @@ other_password_rejected() {
 
 ranking_has_user() {
   # El ProxyService codifica los ids para el ranking: "-" queda como "_2d"
-  curl -s -H 'Host: ranking.test' http://127.0.0.1/users/ | grep -q prueba_2dimport \
-    && curl -s -H 'Host: ranking.test' http://127.0.0.1/teams/ | grep -q biobio
+  curl -s -u "$RANKING_AUTH" -H 'Host: ranking.test' http://127.0.0.1/users/ | grep -q prueba_2dimport \
+    && curl -s -u "$RANKING_AUTH" -H 'Host: ranking.test' http://127.0.0.1/teams/ | grep -q biobio
 }
 
 check "cms-import-users activo" systemctl is-active --quiet cms-import-users

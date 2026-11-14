@@ -26,6 +26,12 @@ output "workers" {
   }
 }
 
+# Para ver el ranking con ranking_public = false (usuario oci)
+output "ranking_password" {
+  value     = random_password.ranking_view.result
+  sensitive = true
+}
+
 output "admin_password" {
   value     = random_password.admin.result
   sensitive = true

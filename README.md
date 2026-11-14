@@ -26,6 +26,7 @@ Desde aquí se preparan los concursos en el panel de administración. Los envío
 1. En `terraform.tfvars`:
    - `workers_running = true`
    - `contest_id = "<número>"`: el id del concurso en el panel de administración. Activa el ranking.
+   - `ranking_public = true`, si el ranking debe verse sin contraseña durante la competencia (ver [Ranking](#ranking)).
    - `letsencrypt_staging = false`, si aún estaba en `true`.
 2. `terraform apply`. Enciende los workers, reinicia CMS con la configuración nueva (los envíos los evalúan los workers) y, si cambió `letsencrypt_staging`, obtiene el certificado real.
 3. Si el ranking tiene datos de pruebas: `ssh ubuntu@<ip> sudo cms-ranking-reset`.
@@ -47,6 +48,18 @@ terraform output -raw admin_password   # contraseña del usuario admin
 ```
 
 Para agregar más administradores (mejor uno por persona): desde la sección **Admins** del panel, o en la principal con `~/cms/bin/cmsAddAdmin <usuario> -p <contraseña>`.
+
+## Ranking
+
+El ranking (`terraform output urls`) pide usuario y contraseña, para que no se vean los nombres de los problemas ni los participantes mientras se prepara el concurso:
+
+```bash
+terraform output -raw ranking_password   # usuario: oci
+```
+
+Para abrirlo, `ranking_public = true` en `terraform.tfvars` y `terraform apply`; para volver a protegerlo, `false` (el valor por defecto). El cambio solo recarga nginx (con `cms-https`): no reinicia CMS. CMS le manda los datos al ranking directamente, sin pasar por nginx, así que la contraseña no lo afecta.
+
+Esta contraseña es solo para ver. La que usa CMS para escribir en el ranking es otra y no se entrega.
 
 ## Importar usuarios
 
@@ -185,7 +198,7 @@ Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
 | `sudo cms-contest <id\|ALL>` | Baja la configuración, asocia CMS al concurso y reinicia CMS en la principal. Terraform lo ejecuta solo al cambiar `contest_id` o la configuración, y después reinicia CMS en los workers encendidos (por SSM). |
 | `sudo cms-update-scripts` | Baja `scripts/` desde S3 e instala comandos y servicios. Corre solo al arrancar y antes de cada comando que Terraform ejecuta en una máquina. |
 | `sudo cms-ranking-reset` | Borra los datos del ranking y los vuelve a cargar desde CMS. |
-| `sudo cms-https <correo> <true\|false> <dominio>...` | Obtiene o cambia el certificado HTTPS (`true`: certificado de prueba). Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios, el correo o `letsencrypt_staging`. |
+| `sudo cms-https <correo> <true\|false> <dominio>...` | Baja la configuración de nginx y la contraseña del ranking, y obtiene o cambia el certificado HTTPS (`true`: certificado de prueba). Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios, el correo, `letsencrypt_staging` o `ranking_public`. |
 | `cms-backup` | Exporta los concursos a `~/cms-backups/`. Bajarlos con `scp` antes de `terraform destroy`. |
 | `sudo cms-task start <zip> --contest <id>` | [Sube un concurso de ocimatic](#subir-problemas) y muestra el log; `sudo cms-task attach` vuelve a mostrarlo. Lo usa `tools/cms-task-push`. |
 | `sudo cms-import-users-update` | Baja el [importador de usuarios](#importar-usuarios) desde S3 y lo reinicia. Terraform lo ejecuta cuando cambia `import-users/` o se recrea la principal. |

@@ -178,9 +178,15 @@ export_zip() {
 }
 
 # cms_task <zip> <nombre del log>: lo que hace tools/cms-task-push. Log en test/.work/
+# Cada zip con su propio nombre en la VM, como cms-task-push: incus conserva el dueño
+# del archivo (uid 1000 = ubuntu en la VM) y root no puede sobrescribirlo en /tmp
+# (fs.protected_regular).
 cms_task() {
-  incus file push "$1" "$MAIN/tmp/cms-export.zip"
-  incus exec "$MAIN" -- cms-task start /tmp/cms-export.zip --contest "$CONTEST_ID" >"$WORK/$2.log" 2>&1
+  if ! incus file push "$1" "$MAIN/tmp/$2.zip" >"$WORK/$2.log" 2>&1; then
+    echo "  (no se pudo copiar $1 a la VM, ver $WORK/$2.log)"
+    return 2
+  fi
+  incus exec "$MAIN" -- cms-task start "/tmp/$2.zip" --contest "$CONTEST_ID" >"$WORK/$2.log" 2>&1
 }
 
 echo "== Modo preparación (workers_running = false)"
@@ -310,6 +316,7 @@ cat <<EOF
 Para ver la web, agrega a /etc/hosts:
   10.20.1.10 cms.test cms-admin.test ranking.test
 y abre http://cms-admin.test (usuario admin, contraseña: $(tf output -raw admin_password)).
+El ranking (http://ranking.test) pide usuario oci y contraseña: $(tf output -raw ranking_password).
 El importador de usuarios está en http://cms-admin.test/import-users/.
 
 Consola: $0 shell [worker]    Borrar todo: $0 clean

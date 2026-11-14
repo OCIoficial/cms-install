@@ -36,10 +36,10 @@ require_root "$@"
 show_log() {
   local invocation=$1 follow=${2:-}
   if [[ -z $follow ]]; then
-    journalctl -q -o cat "_SYSTEMD_INVOCATION_ID=$invocation"
+    journalctl -q --no-pager -o cat "_SYSTEMD_INVOCATION_ID=$invocation"
     return
   fi
-  journalctl -q -o cat -n all -f "_SYSTEMD_INVOCATION_ID=$invocation" &
+  journalctl -q --no-pager -o cat -n all -f "_SYSTEMD_INVOCATION_ID=$invocation" &
   local pid=$!
   trap 'kill $pid 2>/dev/null' EXIT
   while systemctl is-active --quiet "$UNIT"; do sleep 2; done
@@ -51,7 +51,7 @@ show_log() {
 
 # El resultado sale de la última línea del log (la escribe cms_task/__main__.py)
 result() {
-  if journalctl -q -o cat "_SYSTEMD_INVOCATION_ID=$1" | tail -n 1 | grep -qx "RESULTADO: OK"; then
+  if journalctl -q --no-pager -o cat "_SYSTEMD_INVOCATION_ID=$1" | tail -n 1 | grep -qx "RESULTADO: OK"; then
     return 0
   fi
   return 1
@@ -66,10 +66,11 @@ attach() {
     echo
     show_log "$invocation" --follow
   else
-    # La última entrada suele ser de systemd ("Deactivated"), que usa INVOCATION_ID;
-    # las del programa usan _SYSTEMD_INVOCATION_ID
-    invocation=$(journalctl -q -u "$UNIT" -n 1 -o export \
-      | sed -n 's/^_\{0,1\}\(SYSTEMD_\)\{0,1\}INVOCATION_ID=//p' | head -n 1)
+    # La última línea que escribió el programa (las tiene _SYSTEMD_INVOCATION_ID).
+    # Se busca hacia atrás: las últimas entradas de la unidad suelen ser de systemd
+    # y no siempre traen el id. `|| true`: sed termina antes que journalctl (SIGPIPE).
+    invocation=$(journalctl -q --no-pager -u "$UNIT" -r -o export \
+      | sed -n '/^_SYSTEMD_INVOCATION_ID=/{s///p;q}' || true)
     if [[ -z $invocation ]]; then
       echo "No hay importaciones registradas."
       return 0

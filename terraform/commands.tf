@@ -46,13 +46,15 @@ resource "terraform_data" "cms_worker_restart" {
 }
 
 # Obtiene o cambia el certificado HTTPS. Corre cuando cambian los dominios, el
-# correo, el modo staging, la configuración de nginx (cms-https la vuelve a
-# bajar) o se recrea la principal (el primer arranque no pide certificado).
+# correo, el modo staging, la configuración de nginx o la contraseña del ranking
+# (cms-https las vuelve a bajar) o se recrea la principal (el primer arranque no
+# pide certificado).
 resource "terraform_data" "cms_https" {
   triggers_replace = {
     main_id = aws_instance.main.id
     args    = "${var.letsencrypt_email} ${var.letsencrypt_staging} ${join(" ", values(local.domains))}"
     nginx   = sha256(local.cms_nginx)
+    ranking = sha256(local.ranking_htpasswd)
   }
 
   provisioner "local-exec" {
@@ -60,7 +62,7 @@ resource "terraform_data" "cms_https" {
     environment = local.aws_cli_env
   }
 
-  depends_on = [aws_s3_object.config, cloudflare_dns_record.cms]
+  depends_on = [aws_s3_object.config, aws_s3_object.secrets, cloudflare_dns_record.cms]
 }
 
 # Instala o actualiza el importador de usuarios (/import-users en el dominio del

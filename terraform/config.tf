@@ -28,10 +28,17 @@ locals {
   })
 
   cms_nginx = templatefile("${path.module}/templates/cms.nginx.tftpl", {
-    contest = local.domains.contest
-    admin   = local.domains.admin
-    ranking = local.domains.ranking
+    contest        = local.domains.contest
+    admin          = local.domains.admin
+    ranking        = local.domains.ranking
+    ranking_public = var.ranking_public
   })
+
+  # Usuario y contraseña para ver el ranking (nginx, si ranking_public = false).
+  # En texto plano ({PLAIN}, que nginx acepta): bcrypt() da otro hash en cada plan,
+  # y cada apply volvería a instalar nginx. La contraseña ya está igual de expuesta
+  # en el estado de Terraform y en S3.
+  ranking_htpasswd = "oci:{PLAIN}${random_password.ranking_view.result}\n"
 }
 
 # ---------------------------------------------------------------------------
@@ -48,8 +55,15 @@ resource "random_password" "admin" {
   special = false
 }
 
+# La que usa el ProxyService para escribir en el ranking (cms.toml)
 resource "random_password" "ranking" {
   length  = 24
+  special = false
+}
+
+# La que se entrega para ver el ranking cuando no es público (ranking_public)
+resource "random_password" "ranking_view" {
+  length  = 16
   special = false
 }
 

@@ -40,6 +40,9 @@ systemctl enable --now cms-log.service cms-resource.service cms-ranking.service
 export DEBIAN_FRONTEND=noninteractive
 apt-get install -y nginx certbot python3-certbot-nginx python3-certbot-dns-cloudflare
 s3_get config/cms.nginx /etc/nginx/sites-available/cms
+set +x
+install_ranking_htpasswd
+set -x
 ln -sf /etc/nginx/sites-available/cms /etc/nginx/sites-enabled/cms
 rm -f /etc/nginx/sites-enabled/default
 nginx -t

@@ -18,6 +18,12 @@ variable "contest_id" {
   }
 }
 
+variable "ranking_public" {
+  description = "true: ranking sin contraseña. false: nginx pide el usuario oci y la contraseña de `terraform output -raw ranking_password`."
+  type        = bool
+  default     = false
+}
+
 variable "worker_count" {
   description = "Cantidad de máquinas worker."
   type        = number

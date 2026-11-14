@@ -32,6 +32,7 @@ restore_nginx() {
 }
 trap restore_nginx ERR
 s3_get config/cms.nginx "$NGINX_CONF"
+install_ranking_htpasswd
 nginx -t
 
 args=(
