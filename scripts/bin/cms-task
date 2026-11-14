@@ -1,0 +1,115 @@
+#! /usr/bin/bash
+# Uso (en la principal):
+#   cms-task start <cms-export.zip> --contest <id>
+#   cms-task attach
+#
+# start: importa a CMS el concurso exportado con `ocimatic export-cms` y fija el
+# límite de tiempo de cada tarea midiendo sus soluciones en los workers (ver
+# /opt/cms-deploy/cms_task/importer.py). Corre como el servicio temporal de
+# systemd `cms-task`, así que sigue aunque se corte la conexión, y muestra su log.
+# Solo una importación a la vez.
+#
+# attach: muestra el log de la importación en curso hasta que termine o, si no
+# hay ninguna, el de la última. Ctrl-C deja de mostrar el log, pero la
+# importación sigue.
+#
+# Termina con 0 si la importación (la que se muestra) salió bien.
+
+set -euo pipefail
+. /opt/cms-deploy/lib.sh
+
+UNIT=cms-task
+STATE_DIR=/var/lib/cms-task
+
+usage() {
+  echo "Uso: cms-task start <cms-export.zip> --contest <id> | cms-task attach" >&2
+  exit 1
+}
+
+if [[ $ROLE != main ]]; then
+  echo "cms-task se corre en la máquina principal" >&2
+  exit 1
+fi
+require_root "$@"
+
+# Muestra el log de una ejecución del servicio; con --follow, hasta que termine
+show_log() {
+  local invocation=$1 follow=${2:-}
+  if [[ -z $follow ]]; then
+    journalctl -q -o cat "_SYSTEMD_INVOCATION_ID=$invocation"
+    return
+  fi
+  journalctl -q -o cat -n all -f "_SYSTEMD_INVOCATION_ID=$invocation" &
+  local pid=$!
+  trap 'kill $pid 2>/dev/null' EXIT
+  while systemctl is-active --quiet "$UNIT"; do sleep 2; done
+  # Las últimas líneas pueden tardar un poco en llegar al journal
+  sleep 2
+  kill "$pid" 2>/dev/null || true
+  trap - EXIT
+}
+
+# El resultado sale de la última línea del log (la escribe cms_task/__main__.py)
+result() {
+  if journalctl -q -o cat "_SYSTEMD_INVOCATION_ID=$1" | tail -n 1 | grep -qx "RESULTADO: OK"; then
+    return 0
+  fi
+  return 1
+}
+
+attach() {
+  local invocation
+  if systemctl is-active --quiet "$UNIT"; then
+    invocation=$(systemctl show -p InvocationID --value "$UNIT")
+    echo "Importación en curso desde $(systemctl show -p ActiveEnterTimestamp --value "$UNIT")."
+    echo "Ctrl-C deja de mostrar el log; la importación sigue (para volver: cms-task attach)."
+    echo
+    show_log "$invocation" --follow
+  else
+    # La última entrada suele ser de systemd ("Deactivated"), que usa INVOCATION_ID;
+    # las del programa usan _SYSTEMD_INVOCATION_ID
+    invocation=$(journalctl -q -u "$UNIT" -n 1 -o export \
+      | sed -n 's/^_\{0,1\}\(SYSTEMD_\)\{0,1\}INVOCATION_ID=//p' | head -n 1)
+    if [[ -z $invocation ]]; then
+      echo "No hay importaciones registradas."
+      return 0
+    fi
+    echo "No hay una importación en curso. Log de la última:"
+    echo
+    show_log "$invocation"
+  fi
+  result "$invocation"
+}
+
+start() {
+  local zip=$1 contest=$2
+  if systemctl is-active --quiet "$UNIT"; then
+    echo "Ya hay una importación en curso. Para ver su log: cms-task attach" >&2
+    exit 1
+  fi
+  if [[ ! -f $zip ]]; then
+    echo "No existe $zip" >&2
+    exit 1
+  fi
+  install -d -o ubuntu -g ubuntu -m 700 "$STATE_DIR"
+  install -o ubuntu -g ubuntu -m 600 "$zip" "$STATE_DIR/cms-export.zip"
+  # Un servicio temporal que falló queda cargado e impide usar el mismo nombre
+  systemctl reset-failed "$UNIT" 2>/dev/null || true
+  systemd-run --quiet --unit="$UNIT" --uid=ubuntu --gid=ubuntu \
+    --working-directory=/home/ubuntu \
+    --setenv=HOME=/home/ubuntu --setenv=PYTHONPATH="$DEPLOY_DIR" --setenv=PYTHONUNBUFFERED=1 \
+    "$CMS_BIN/python" -m cms_task import "$STATE_DIR/cms-export.zip" --contest "$contest"
+  attach
+}
+
+case ${1:-} in
+  start)
+    [[ $# -eq 4 && $3 == --contest && $4 =~ ^[0-9]+$ ]] || usage
+    start "$2" "$4"
+    ;;
+  attach)
+    [[ $# -eq 1 ]] || usage
+    attach
+    ;;
+  *) usage ;;
+esac

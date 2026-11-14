@@ -16,12 +16,14 @@ resource "aws_s3_bucket_public_access_block" "assets" {
 
 # scripts/ y ranking/ se suben como un zip cada uno (terraform/.build/, no se
 # versiona). Los permisos fijos hacen que el zip salga igual en cualquier
-# máquina, así un apply sin cambios no lo vuelve a subir.
+# máquina, así un apply sin cambios no lo vuelve a subir. Sin las pruebas ni
+# el caché de Python: correr las pruebas no debe cambiar el zip (y reiniciar CMS).
 data "archive_file" "scripts" {
   type             = "zip"
   source_dir       = "${path.module}/../scripts"
   output_path      = "${path.module}/.build/scripts.zip"
   output_file_mode = "0755"
+  excludes         = ["**/__pycache__/**", "**/test_*.py"]
 }
 
 data "archive_file" "ranking" {

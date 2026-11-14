@@ -1,0 +1,47 @@
+#! /usr/bin/env bash
+# Sube a CMS un concurso de ocimatic y mide los límites de tiempo en los workers.
+#
+# Uso:
+#   tools/cms-task-push <carpeta del concurso | cms-export.zip> --contest <id>
+#   tools/cms-task-push --attach
+#
+# Antes, en el concurso: ocimatic run-testplan && ocimatic gen-expected && ocimatic export-cms
+# (deja cms-export.zip en la raíz del concurso). Los workers deben estar encendidos
+# (workers_running = true).
+#
+# Copia el zip a la principal y ejecuta `cms-task start` allí (ver scripts/bin/cms-task),
+# que corre como servicio de systemd: si se corta la conexión o haces Ctrl-C, la
+# importación sigue, y `--attach` vuelve a mostrar su log.
+#
+# La IP de la principal sale de `terraform output`; para usar otra: CMS_MAIN=<ip>.
+
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+
+usage() {
+  echo "Uso: $0 <carpeta del concurso | cms-export.zip> --contest <id> | $0 --attach" >&2
+  exit 1
+}
+
+MAIN=${CMS_MAIN:-$(terraform -chdir="$ROOT/terraform" output -raw main_ip)}
+SSH=(ssh -t "ubuntu@$MAIN")
+
+if [[ ${1:-} == --attach ]]; then
+  [[ $# -eq 1 ]] || usage
+  exec "${SSH[@]}" sudo cms-task attach
+fi
+
+[[ $# -eq 3 && $2 == --contest && $3 =~ ^[0-9]+$ ]] || usage
+ZIP=$1
+if [[ -d $ZIP ]]; then
+  ZIP=$ZIP/cms-export.zip
+fi
+if [[ ! -f $ZIP ]]; then
+  echo "No existe $ZIP. Generarlo con \`ocimatic export-cms\` en la raíz del concurso." >&2
+  exit 1
+fi
+
+REMOTE=/tmp/cms-export-$$.zip
+scp -q "$ZIP" "ubuntu@$MAIN:$REMOTE"
+"${SSH[@]}" "sudo cms-task start $REMOTE --contest $3; status=\$?; rm -f $REMOTE; exit \$status"

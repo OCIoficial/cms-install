@@ -7,6 +7,8 @@
 #   con la instalación interrumpida, cambio de scripts/, preparación ↔
 #   competencia, concurso específico y un apply sin cambios. Encender/apagar el
 #   worker y los comandos de commands.tf (SSM) se imitan con incus.
+# - Sube un concurso de ocimatic con cms-task (test/cms-task/), como
+#   tools/cms-task-push pero con incus en vez de scp/ssh.
 # No se prueba: IAM, security groups, SSM, Cloudflare/HTTPS (cms-https se reemplaza).
 #
 # Uso:
@@ -166,6 +168,20 @@ result() { # result <descripción> <comando...>
   shift
   if "$@" >/dev/null 2>&1; then echo "  OK    $name"; else echo "  FALLA $name"; status=1; fi
 }
+not() { ! "$@"; }
+
+sql() { incus exec "$MAIN" -- sudo -u postgres psql -d cmsdb -tAc "$1"; }
+
+# export_zip <carpeta> <zip>: arma el zip como `ocimatic export-cms`
+export_zip() {
+  (cd "$1" && rm -f "$2" && python3 -c 'import shutil, sys; shutil.make_archive(sys.argv[1], "zip", ".")' "${2%.zip}")
+}
+
+# cms_task <zip> <nombre del log>: lo que hace tools/cms-task-push. Log en test/.work/
+cms_task() {
+  incus file push "$1" "$MAIN/tmp/cms-export.zip"
+  incus exec "$MAIN" -- cms-task start /tmp/cms-export.zip --contest "$CONTEST_ID" >"$WORK/$2.log" 2>&1
+}
 
 echo "== Modo preparación (workers_running = false)"
 apply false
@@ -228,6 +244,9 @@ apply false
 worker_state stopped
 contest "$CONTEST_ID"
 checks || status=1
+export_zip "$ROOT/test/cms-task" "$WORK/cms-export.zip"
+result "cms-task se niega a medir con los workers apagados" not cms_task "$WORK/cms-export.zip" cms-task-prep
+result "  y no crea la tarea" test "$(sql "SELECT count(*) FROM tasks WHERE name = 'suma'")" = 0
 
 echo
 echo "== De nuevo modo competencia (worker ya instalado)"
@@ -235,6 +254,48 @@ apply true
 worker_state running
 contest "$CONTEST_ID"
 checks || status=1
+
+echo
+echo "== Subir problemas con cms-task (logs en test/.work/cms-task-*.log)"
+tester_submissions() {
+  sql "SELECT count(*) FROM submissions s JOIN participations p ON s.participation_id = p.id
+       JOIN users u ON p.user_id = u.id JOIN tasks t ON s.task_id = t.id
+       WHERE u.username = 'tester' AND t.name = 'suma'"
+}
+suma_datasets() { # cantidad de datasets|dataset activo
+  sql "SELECT count(*), max(t.active_dataset_id) FROM datasets d JOIN tasks t ON d.task_id = t.id WHERE t.name = 'suma'"
+}
+result "importa el concurso y las soluciones dan lo esperado" cms_task "$WORK/cms-export.zip" cms-task-1
+# 0 si no se creó la tarea: así las consultas siguientes fallan sin error de sintaxis
+DATASET=$(sql "SELECT coalesce(max(active_dataset_id), 0) FROM tasks WHERE name = 'suma'")
+result "  la tarea queda en el concurso, en primer lugar" \
+  test "$(sql "SELECT contest_id, num, title FROM tasks WHERE name = 'suma'")" = "$CONTEST_ID|0|Suma"
+result "  un dataset, con el límite medido (0.5 s) y 256 MiB" \
+  test "$(sql "SELECT count(*), max(time_limit), max(memory_limit) FROM datasets WHERE id = $DATASET")" = "1|0.5|268435456"
+result "  casos públicos y checker compilado" \
+  test "$(sql "SELECT (SELECT count(*) FROM testcases WHERE dataset_id = $DATASET AND public),
+                      (SELECT count(*) FROM managers WHERE dataset_id = $DATASET AND filename = 'checker')")" = "3|1"
+result "  el usuario tester es oculto" test "$(sql "SELECT p.hidden FROM participations p JOIN users u
+  ON p.user_id = u.id WHERE u.username = 'tester' AND p.contest_id = $CONTEST_ID")" = t
+result "  4 envíos del tester" test "$(tester_submissions)" = 4
+result "  attach muestra el resultado de la última importación" \
+  bash -c "incus exec $MAIN -- cms-task attach | grep -qx 'RESULTADO: OK'"
+
+result "volver a importar reemplaza el dataset" cms_task "$WORK/cms-export.zip" cms-task-2
+AFTER=$(suma_datasets)
+result "  queda un solo dataset, el nuevo" test "${AFTER%|*}" = 1 -a "$AFTER" != "1|$DATASET"
+result "  y solo los envíos nuevos del tester" test "$(tester_submissions)" = 4
+
+# Una solución con un resultado esperado que no se cumple: la importación falla y no cambia nada
+cp -r "$ROOT/test/cms-task" "$WORK/cms-task-mal"
+sed -i 's/"expected": {"1": "OK", "2": "WA"}/"expected": {"1": "OK", "2": "OK"}/' \
+  "$WORK/cms-task-mal/suma/task.json"
+export_zip "$WORK/cms-task-mal" "$WORK/cms-export-mal.zip"
+BEFORE=$(suma_datasets)
+result "una importación con diferencias falla" not cms_task "$WORK/cms-export-mal.zip" cms-task-3
+result "  y reporta la diferencia" grep -q "partial/mal.cpp: subtarea 2 dio WA, se esperaba OK" "$WORK/cms-task-3.log"
+result "  y no cambia el dataset" test "$(suma_datasets)" = "$BEFORE"
+result "  ni los envíos del tester" test "$(tester_submissions)" = 4
 
 echo
 echo "== Un apply sin cambios no cambia nada"

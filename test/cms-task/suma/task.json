@@ -1,0 +1,18 @@
+{
+  "codename": "suma",
+  "title": "Suma",
+  "score_type": "GroupMin",
+  "score_params": [[40, "st1-.*"], [60, "(st1|st2)-.*"]],
+  "checker": "managers/checker.cpp",
+  "grader": null,
+  "solutions": [
+    {"path": "solutions/correct/suma.cpp", "language": "cpp", "correct": true,
+     "include_in_stats": true, "expected": {"1": "OK", "2": "OK"}},
+    {"path": "solutions/correct/suma.py", "language": "python", "correct": true,
+     "include_in_stats": false, "expected": {"1": "OK", "2": "OK"}},
+    {"path": "solutions/partial/lenta.py", "language": "python", "correct": false,
+     "include_in_stats": false, "expected": {"1": "OK", "2": "TLE"}},
+    {"path": "solutions/partial/mal.cpp", "language": "cpp", "correct": false,
+     "include_in_stats": false, "expected": {"1": "OK", "2": "WA"}}
+  ]
+}

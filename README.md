@@ -68,6 +68,40 @@ Si CMS está asociado al concurso (`contest_id`), el ranking se actualiza al imp
 
 El código está en `import-users/`: el backend en Python (`server/`, corre con el Python de CMS en el servicio `cms-import-users`) y el frontend en Svelte (`frontend/`). Terraform ejecuta `import-users/build.sh` en cada plan, que compila el frontend (con `npm ci` si cambiaron las dependencias), y sube el resultado a S3 como `import-users.zip`. Cuando cambia, el `apply` lo instala en la principal con `cms-import-users-update`, sin reiniciar CMS. Pruebas: `python3 import-users/server/test_rules.py` y, en `import-users/frontend/`, `npm test` y `npm run check`.
 
+## Subir problemas
+
+`tools/cms-task-push` sube a CMS un concurso preparado con [ocimatic](https://github.com/OCIoficial/ocimatic): crea las tareas (o reemplaza sus casos), envía las soluciones del concurso, fija el límite de tiempo de cada tarea con los tiempos medidos en los workers y revisa que cada solución dé lo esperado en cada subtarea. Se usa antes de la competencia, cuando todavía no hay envíos de participantes.
+
+1. Crear el concurso en el panel de administración (nombre, fechas, lenguajes). El script solo le agrega tareas.
+2. Encender los workers (`workers_running = true` y `terraform apply`). Con los workers apagados evalúa la principal, sus tiempos no sirven y el script se niega a seguir.
+3. En la carpeta del concurso de ocimatic:
+   ```bash
+   ocimatic run-testplan && ocimatic gen-expected && ocimatic export-cms
+   ```
+   Deja `cms-export.zip` en la raíz del concurso, con todas las tareas.
+4. Desde este repo:
+   ```bash
+   tools/cms-task-push ~/oci/2026/2026-11-Regional --contest <id>
+   ```
+   Tarda varios minutos y muestra el avance y, al final, un reporte por tarea:
+   ```
+   == suma: límite 0.5 s, OK
+     solución          st1  st2  tiempo
+     correct/suma.cpp  OK   OK   0.002s
+     partial/mal.cpp   OK   WA   0.002s
+   ```
+   La importación corre en la principal como servicio de systemd: si se corta la conexión o haces Ctrl-C, sigue. `tools/cms-task-push --attach` vuelve a mostrar su log (o el de la última, si ya terminó). Solo corre una a la vez.
+
+Cómo funciona (`scripts/cms_task/`, en la principal con `sudo cms-task start|attach`):
+
+- **Tareas.** Las que no existen se crean; las que existen reciben un dataset nuevo, que reemplaza al antiguo al final. Quedan en el orden del problemset (`priority` de ocimatic) y antes de las demás tareas del concurso. Una tarea que ya está en otro concurso es un error.
+- **Configuración.** Batch con entrada y salida estándar, `GroupMin` con los puntajes del enunciado, todos los casos públicos, 256 MiB, feedback completo y puntaje por subtarea (`max_subtask`). Si la tarea tiene checker (`managers/checker.cpp`), se compila en la principal (`g++ -static -I managers`) y se usa como comparador; si tiene `grader.cpp`, se sube con los headers de `managers/`.
+- **Envíos.** Los hace el usuario `tester`, con una participación oculta (no sale en el ranking) y sin restricciones, que el script crea. Lenguajes: C++20, Python 3 y Java; Rust no, porque los workers no tienen `rustc`.
+- **Límite de tiempo.** Primero se evalúan las soluciones correctas que cuentan para el límite (las que no son Python, salvo `@ocimatic::include-in-stats`) con un límite de 10 s. El límite es el de ocimatic, `ceil(max * 4) / 2` sobre su tiempo de CPU máximo. Con ese límite se reevalúan y se envían las demás.
+- **Todo o nada.** Si una solución no da lo esperado, algo no compila o un caso lo evaluó la principal, se borran las tareas y los datasets creados y el concurso queda como estaba. Si todo calza, se activan los datasets nuevos, se borran los antiguos (con sus evaluaciones) y los envíos de `tester` de importaciones anteriores, y se avisa al ranking.
+
+`ocimatic export-cms` y este script comparten el formato del zip (`format_version` en `contest.json`); si no coinciden, el script lo dice. Pruebas sin CMS: `python3 -m unittest discover -s scripts/cms_task -t scripts`.
+
 ## Credenciales
 
 Terraform usa el perfil `oci-admin` de la AWS CLI (variable `aws_profile`) y lee los datos de Cloudflare y el correo de Let's Encrypt de `terraform/secrets.auto.tfvars`. Terraform carga ese archivo solo, y está en `.gitignore`, así que no se versiona. Crearlo así:
@@ -153,12 +187,13 @@ Internet ── 443 ──► cms-main (t3.large, IP fija, DNS en Cloudflare)
 | `sudo cms-ranking-reset` | Borra los datos del ranking y los vuelve a cargar desde CMS. |
 | `sudo cms-https <correo> <true\|false> <dominio>...` | Obtiene o cambia el certificado HTTPS (`true`: certificado de prueba). Terraform lo ejecuta al crear o recrear la principal y al cambiar los subdominios, el correo o `letsencrypt_staging`. |
 | `cms-backup` | Exporta los concursos a `~/cms-backups/`. Bajarlos con `scp` antes de `terraform destroy`. |
+| `sudo cms-task start <zip> --contest <id>` | [Sube un concurso de ocimatic](#subir-problemas) y muestra el log; `sudo cms-task attach` vuelve a mostrarlo. Lo usa `tools/cms-task-push`. |
 | `sudo cms-import-users-update` | Baja el [importador de usuarios](#importar-usuarios) desde S3 y lo reinicia. Terraform lo ejecuta cuando cambia `import-users/` o se recrea la principal. |
 | `journalctl -u cms-resource -f` | Logs de CMS. Los logs detallados están en `~/cms/log/`. |
 
 ## Prueba local
 
-`test/run.sh` prueba el despliegue sin AWS, en VMs de Incus con las mismas IPs y el mismo `user_data` que en EC2. Terraform real genera la configuración contra [moto](https://github.com/getmoto/moto), que simula S3. Prueba la principal y un worker en los cambios de un despliegue real: worker creado apagado con la instalación a medias, cambio de `scripts/`, preparación ↔ competencia, un `contest_id` específico y un `apply` sin cambios. Encender y apagar el worker y los comandos que Terraform ejecuta por SSM se imitan con incus. También prueba el importador de usuarios: entra al panel con curl, importa un usuario al concurso y revisa la base de datos y el ranking. No prueba IAM, security groups, SSM ni HTTPS. Requiere `incus`, `terraform`, `aws`, `uv`, `node` y `npm`. `test/run.sh clean` borra todo.
+`test/run.sh` prueba el despliegue sin AWS, en VMs de Incus con las mismas IPs y el mismo `user_data` que en EC2. Terraform real genera la configuración contra [moto](https://github.com/getmoto/moto), que simula S3. Prueba la principal y un worker en los cambios de un despliegue real: worker creado apagado con la instalación a medias, cambio de `scripts/`, preparación ↔ competencia, un `contest_id` específico y un `apply` sin cambios. Encender y apagar el worker y los comandos que Terraform ejecuta por SSM se imitan con incus. También prueba el importador de usuarios: entra al panel con curl, importa un usuario al concurso y revisa la base de datos y el ranking. Y `cms-task` con el concurso de `test/cms-task/` (una tarea con checker): que se niegue con los workers apagados, que importe y mida con el worker, que una segunda importación reemplace el dataset y que una importación con un resultado inesperado falle sin cambiar nada (logs en `test/.work/cms-task-*.log`). No prueba IAM, security groups, SSM ni HTTPS. Requiere `incus`, `terraform`, `aws`, `uv`, `node` y `npm`. `test/run.sh clean` borra todo.
 
 ## Versión de CMS
 

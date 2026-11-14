@@ -2,6 +2,11 @@ output "urls" {
   value = { for k, d in local.domains : k => "https://${d}" }
 }
 
+# IP pública de la principal, para scripts (cms-task-push)
+output "main_ip" {
+  value = aws_eip.main.public_ip
+}
+
 output "ssh_main" {
   value = "ssh ubuntu@${aws_eip.main.public_ip}"
 }

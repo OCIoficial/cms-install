@@ -6,3 +6,4 @@ crash.log
 terraform/secrets.auto.tfvars
 test/.work/
 terraform/.build/
+__pycache__/
